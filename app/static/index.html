@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Codex Voice Control</title>
+<style>
+body{max-width:760px;margin:36px auto;padding:0 18px;font:16px system-ui;color:#18212f;background:#f6f8fb}button,textarea{font:inherit}button{padding:10px 14px;border:0;border-radius:8px;background:#155eef;color:white;cursor:pointer}button.secondary{background:#475467}button.danger{background:#b42318}.card{background:white;border:1px solid #d0d5dd;border-radius:12px;padding:18px;margin:14px 0}textarea{width:100%;box-sizing:border-box;min-height:90px;padding:10px}.hold{width:100%;font-size:20px;padding:22px;background:#7f56d9}.hold.recording{background:#b42318}#command{font-weight:650}small{color:#667085}.actions{display:flex;gap:8px;flex-wrap:wrap}.approval{border-left:4px solid #f79009;padding-left:12px;margin:12px 0}</style>
+<main>
+<h1>Codex Voice Control</h1>
+<p><small>按住说话，松开后先检查转写和动作，再执行。语音不会保存到本机。</small></p>
+<section class="card"><button id="hold" class="hold">按住说话</button><p id="recording"></p></section>
+<section class="card"><label for="text">转写预览 / 直接输入</label><textarea id="text" placeholder="例如：目标是修复登录问题"></textarea><p id="command">等待输入</p><div class="actions"><button id="preview" class="secondary">识别动作</button><button id="execute">确认并执行</button></div></section>
+<section class="card"><h2>Codex 审批</h2><div id="approvals">暂无待审批操作</div></section>
+</main>
+<script>
+const text=document.querySelector('#text'), command=document.querySelector('#command'), hold=document.querySelector('#hold'), recording=document.querySelector('#recording');
+let recorder, chunks=[], recordingStartedAt=0;
+async function post(path, body){const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const p=await r.json();if(!r.ok)throw Error(p.error);return p}
+function describe(p){const names={prompt:'普通 Codex 提示',new_task:'新开任务（会更换当前语音会话）',compact:'压缩当前上下文',set_goal:'设置目标',pause_goal:'暂停目标',resume_goal:'继续目标',clear_goal:'清除目标'};command.textContent='将执行：'+(names[p.kind]||p.kind)+(p.objective?' — '+p.objective:'')}
+async function preview(){try{describe(await post('/api/preview',{text:text.value}))}catch(e){command.textContent=e.message}}
+document.querySelector('#preview').onclick=preview;
+document.querySelector('#execute').onclick=async()=>{try{const p=await post('/api/execute',{text:text.value});describe(p);command.textContent+='（已发送）'}catch(e){command.textContent=e.message}};
+function pickRecordingMimeType(){return ['audio/webm;codecs=opus','audio/webm','audio/mp4','audio/ogg;codecs=opus'].find(type=>MediaRecorder.isTypeSupported(type))||''}
+function extensionFor(mimeType){return mimeType.includes('mp4')?'m4a':mimeType.includes('ogg')?'ogg':'webm'}
+async function start(e){if(!navigator.mediaDevices||!window.MediaRecorder){recording.textContent='浏览器不支持麦克风录音';return}hold.setPointerCapture(e.pointerId);const stream=await navigator.mediaDevices.getUserMedia({audio:true});const mimeType=pickRecordingMimeType();chunks=[];recorder=new MediaRecorder(stream,mimeType?{mimeType}:undefined);recordingStartedAt=performance.now();recorder.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};recorder.onstop=async()=>{stream.getTracks().forEach(t=>t.stop());hold.classList.remove('recording');const blob=new Blob(chunks,{type:recorder.mimeType||mimeType});const elapsed=Math.round(performance.now()-recordingStartedAt);if(elapsed<500||blob.size<1024){recording.textContent=`录音过短（${elapsed}ms，${blob.size} bytes），请按住至少 1 秒后松开。`;return}recording.textContent=`正在转写（${blob.type||'unknown'}，${blob.size} bytes）…`;const f=new FormData();f.append('file',blob,`speech.${extensionFor(blob.type||mimeType)}`);try{const r=await fetch('/api/transcribe',{method:'POST',body:f}),p=await r.json();if(!r.ok)throw Error(p.error);text.value=p.text;describe(p.preview);recording.textContent='转写完成'}catch(e){recording.textContent=e.message}};recorder.start();hold.classList.add('recording');recording.textContent='录音中，松开以结束'}
+function stop(){if(recorder&&recorder.state==='recording')recorder.stop()}
+hold.addEventListener('pointerdown',start);['pointerup','pointercancel'].forEach(e=>hold.addEventListener(e,stop));
+async function approvals(){try{const p=await (await fetch('/api/approvals')).json(),box=document.querySelector('#approvals');box.innerHTML=p.approvals.length?'':'暂无待审批操作';p.approvals.forEach(a=>{const d=document.createElement('div');d.className='approval';const permission=a.method==='item/permissions/requestApproval';d.textContent=permission?('Codex 请求额外权限：'+JSON.stringify(a.params.permissions)):(a.params.command||a.params.reason||'Codex 请求审批');for(const [label,decision] of [['允许','accept'],['拒绝','decline']]){const b=document.createElement('button');b.textContent=label;b.className=decision==='decline'?'danger':'';b.onclick=async()=>{await post('/api/approval',{id:a.id,decision});approvals()};d.append(' ',b)}box.append(d)})}catch(e){document.querySelector('#approvals').textContent=e.message}}
+approvals();setInterval(approvals,1200);
+</script>
+</html>
