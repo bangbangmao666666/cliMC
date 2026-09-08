@@ -131,12 +131,14 @@ final class VoiceTranscriptionRouter {
 
     private func commitVoiceSpan(_ text: String) {
         let nextText = commandResolver.resolve(text) ?? text
-        let backspaces = displayedVoiceText.count
+        let prefixCount = Self.commonPrefixCount(displayedVoiceText, nextText)
+        let backspaces = displayedVoiceText.count - prefixCount
+        let suffix = String(nextText.dropFirst(prefixCount))
         displayedVoiceText = nextText
-        if backspaces > 0 || !nextText.isEmpty {
+        if backspaces > 0 || !suffix.isEmpty {
             injector.replaceVoiceSpan(
                 backspaces: backspaces,
-                text: nextText
+                text: suffix
             ) { [weak self] in
                 guard let self else { return }
                 self.onFinalCommit?(nextText)

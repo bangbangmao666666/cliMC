@@ -162,10 +162,11 @@ final class VoiceTranscriptionRouterTests: XCTestCase {
         router.handleResult(text: "飞书准确率怎么样", isFinal: false, isRecording: true)
         router.handleResult(text: "飞书准确率怎么样？", isFinal: true, isRecording: false)
 
-        // Release commits full replacement: delete preview and insert final text
+        // The final snapshot only appends the punctuation that differs from
+        // the live preview.
         XCTAssertEqual(
             injector.replacements.last,
-            ReplacementOperation(backspaces: 8, textToInsert: "飞书准确率怎么样？")
+            ReplacementOperation(backspaces: 0, textToInsert: "？")
         )
     }
 
@@ -188,9 +189,10 @@ final class VoiceTranscriptionRouterTests: XCTestCase {
     }
 
     func testFinalTextMatchingPreviewStillPublishesCommit() {
+        let injector = MockTextInjector()
         let router = VoiceTranscriptionRouter(
             aliases: [:],
-            injector: MockTextInjector(),
+            injector: injector,
             indicator: MockIndicator()
         )
         var committed: [String] = []
@@ -201,6 +203,10 @@ final class VoiceTranscriptionRouterTests: XCTestCase {
         router.handleResult(text: "完成", isFinal: true, isRecording: false)
 
         XCTAssertEqual(committed, ["完成"])
+        XCTAssertEqual(
+            injector.replacements,
+            [ReplacementOperation(backspaces: 0, textToInsert: "完成")]
+        )
     }
 }
 
