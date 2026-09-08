@@ -16,3 +16,6 @@ xcuserdata/
 
 # Python test cache
 .pytest_cache/
+
+# Local distribution artifacts
+/dist/

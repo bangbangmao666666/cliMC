@@ -13,7 +13,11 @@
 [![Python 3](https://img.shields.io/badge/Python-3-3776AB?style=flat&logo=python&logoColor=white)](https://www.python.org/)
 [![MIT License](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat)](LICENSE)
 
-[快速开始](#快速开始) · [使用方法](#使用方法) · [MIT 许可证](LICENSE)
+<p>
+  <a href="https://github.com/bangbangmao666666/cliMC/releases/download/v1.0.0-test/cliMC-macos-arm64.zip"><img src="https://img.shields.io/badge/%E4%B8%8B%E8%BD%BD_macOS_%E6%B5%8B%E8%AF%95%E7%89%88-Apple_Silicon-007AFF?style=for-the-badge&logo=apple&logoColor=white" alt="下载 macOS 测试版（Apple Silicon）"></a>
+</p>
+
+[下载说明](#下载安装包) · [源码安装](#从源码安装) · [使用方法](#使用方法) · [MIT 许可证](LICENSE)
 
 </div>
 
@@ -28,7 +32,18 @@
 
 ## 快速开始
 
-### 环境要求
+### 下载安装包
+
+当前测试版仅支持 Apple Silicon（M 系列）Mac：
+
+- [下载 `cliMC-macos-arm64.zip`](https://github.com/bangbangmao666666/cliMC/releases/download/v1.0.0-test/cliMC-macos-arm64.zip)
+- [查看 SHA-256 校验文件](https://github.com/bangbangmao666666/cliMC/releases/download/v1.0.0-test/cliMC-macos-arm64.zip.sha256)
+
+解压后将 `cliMC.app` 移到“应用程序”文件夹并打开。该测试版未经 Apple Developer 签名或公证；如果首次打开被 macOS 拦截，请前往“系统设置 → 隐私与安全性”，确认仍要打开。
+
+### 从源码安装
+
+环境要求：
 
 - macOS 14 或更高版本
 - Xcode Command Line Tools（用于 Swift 构建）
@@ -42,6 +57,14 @@
 ```
 
 脚本会构建 Release 版本，将 `cliMC.app` 安装到 `~/Applications`，启动菜单栏助手，并注册登录后自动启动。
+
+如果只想生成安装包而不修改当前安装和登录启动项，请运行：
+
+```bash
+./macos-voice/scripts/package-macos.sh
+```
+
+产物固定生成在 `dist/cliMC-macos-arm64.zip` 和 `dist/cliMC-macos-arm64.zip.sha256`。
 
 首次运行时，请在“系统设置 → 隐私与安全性”中为 cliMC 开启：
 
