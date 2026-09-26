@@ -55,7 +55,17 @@ fi
 
 mkdir -p "$LAUNCH_AGENTS"
 cp "$ROOT/launchd/$LABEL.plist" "$LAUNCH_AGENTS/$LABEL.plist"
-plutil -replace 'ProgramArguments.3' -string "$APP" "$LAUNCH_AGENTS/$LABEL.plist"
+python3 - "$LAUNCH_AGENTS/$LABEL.plist" "$APP" <<'PY'
+import plistlib
+import sys
+
+plist_path, app_path = sys.argv[1:]
+with open(plist_path, "rb") as source:
+    launch_agent = plistlib.load(source)
+launch_agent["ProgramArguments"] = ["/usr/bin/open", "-gj", "-a", app_path]
+with open(plist_path, "wb") as destination:
+    plistlib.dump(launch_agent, destination)
+PY
 launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
 launchctl bootstrap "gui/$(id -u)" "$LAUNCH_AGENTS/$LABEL.plist"
 

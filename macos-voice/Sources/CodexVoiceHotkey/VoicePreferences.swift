@@ -92,11 +92,46 @@ struct SiliconFlowSettings: Codable, Equatable {
     static let `default` = SiliconFlowSettings(apiKey: "")
 }
 
+struct DeepSeekSettings: Codable, Equatable {
+    var apiKey: String
+    var baseURL: String
+    var model: String
+
+    init(
+        apiKey: String = "",
+        baseURL: String = Self.defaultBaseURL,
+        model: String = Self.defaultModel
+    ) {
+        self.apiKey = apiKey
+        self.baseURL = baseURL
+        self.model = model
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case apiKey
+        case baseURL
+        case model
+    }
+
+    static let defaultBaseURL = "https://api.deepseek.com"
+    static let defaultModel = "deepseek-flash"
+    static let `default` = DeepSeekSettings()
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        apiKey = try container.decodeIfPresent(String.self, forKey: .apiKey) ?? ""
+        baseURL = try container.decodeIfPresent(String.self, forKey: .baseURL) ?? Self.defaultBaseURL
+        model = try container.decodeIfPresent(String.self, forKey: .model) ?? Self.defaultModel
+    }
+}
+
 struct VoicePreferences: Codable, Equatable {
     var shortcut: VoiceShortcut
     var aliases: [String: String]
     var transcriptionProvider: VoiceTranscriptionProvider
     var siliconFlow: SiliconFlowSettings
+    var deepSeek: DeepSeekSettings
+    var contextualCorrectionEnabled: Bool
     var volcengineAppKey: String
     var volcengineAccessKey: String
     var volcengineAPIKey: String
@@ -110,6 +145,8 @@ struct VoicePreferences: Codable, Equatable {
         case aliases
         case transcriptionProvider
         case siliconFlow
+        case deepSeek
+        case contextualCorrectionEnabled
         case volcengineAppKey
         case volcengineAccessKey
         case volcengineAPIKey
@@ -139,6 +176,8 @@ struct VoicePreferences: Codable, Equatable {
         aliases: [String: String],
         transcriptionProvider: VoiceTranscriptionProvider = .siliconFlow,
         siliconFlow: SiliconFlowSettings = .default,
+        deepSeek: DeepSeekSettings = .default,
+        contextualCorrectionEnabled: Bool = true,
         volcengineAppKey: String = "",
         volcengineAccessKey: String = "",
         volcengineAPIKey: String = "",
@@ -151,6 +190,8 @@ struct VoicePreferences: Codable, Equatable {
         self.aliases = aliases
         self.transcriptionProvider = transcriptionProvider
         self.siliconFlow = siliconFlow
+        self.deepSeek = deepSeek
+        self.contextualCorrectionEnabled = contextualCorrectionEnabled
         self.volcengineAppKey = volcengineAppKey
         self.volcengineAccessKey = volcengineAccessKey
         self.volcengineAPIKey = volcengineAPIKey
@@ -187,6 +228,8 @@ struct VoicePreferences: Codable, Equatable {
         } else {
             siliconFlow = .default
         }
+        deepSeek = try container.decodeIfPresent(DeepSeekSettings.self, forKey: .deepSeek) ?? .default
+        contextualCorrectionEnabled = try container.decodeIfPresent(Bool.self, forKey: .contextualCorrectionEnabled) ?? true
         volcengineAppKey = try container.decodeIfPresent(String.self, forKey: .volcengineAppKey) ?? ""
         volcengineAccessKey = try container.decodeIfPresent(String.self, forKey: .volcengineAccessKey)
             ?? ""
@@ -207,6 +250,8 @@ struct VoicePreferences: Codable, Equatable {
         try container.encode(aliases, forKey: .aliases)
         try container.encode(transcriptionProvider, forKey: .transcriptionProvider)
         try container.encode(siliconFlow, forKey: .siliconFlow)
+        try container.encode(deepSeek, forKey: .deepSeek)
+        try container.encode(contextualCorrectionEnabled, forKey: .contextualCorrectionEnabled)
         try container.encode(volcengineAppKey, forKey: .volcengineAppKey)
         try container.encode(volcengineAccessKey, forKey: .volcengineAccessKey)
         try container.encode(volcengineAPIKey, forKey: .volcengineAPIKey)
@@ -240,7 +285,9 @@ enum VoicePreferencesStore {
     static func load() -> VoicePreferences {
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try secureSettingsDirectory()
             if FileManager.default.fileExists(atPath: settingsFile.path) {
+                try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: settingsFile.path)
                 return try JSONDecoder().decode(VoicePreferences.self, from: Data(contentsOf: settingsFile))
             }
             var preferences = VoicePreferences.default
@@ -257,7 +304,13 @@ enum VoicePreferencesStore {
 
     static func save(_ preferences: VoicePreferences) throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try secureSettingsDirectory()
         let data = try JSONEncoder().encode(preferences)
         try data.write(to: settingsFile, options: .atomic)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: settingsFile.path)
+    }
+
+    private static func secureSettingsDirectory() throws {
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
     }
 }

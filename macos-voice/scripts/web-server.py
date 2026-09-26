@@ -125,6 +125,19 @@ body {
   color: #f85149; font-size: 18px; cursor: pointer; transition: all 0.15s; flex-shrink: 0;
 }
 .row .del:hover { background: #f85149; color: #fff; border-color: #f85149; }
+.corrections { margin: 24px 0 16px; }
+.corrections h2 { color: #f0f6fc; font-size: 18px; margin-bottom: 4px; }
+.corrections > p { color: #8b949e; font-size: 12px; line-height: 1.6; margin: 6px 0 12px; }
+.correction-entry { display: flex; gap: 8px; margin-bottom: 10px; }
+.correction-entry input { min-width: 0; flex: 1; padding: 8px 10px; font-size: 14px; background: #0d1117; color: #c9d1d9; border: 1px solid #30363d; border-radius: 6px; outline: none; }
+.correction-entry input:focus { border-color: #58a6ff; }
+.correction-entry button { padding: 8px 12px; border-radius: 6px; font-size: 13px; cursor: pointer; border: 1px solid #2ea043; background: #238636; color: #fff; white-space: nowrap; }
+.correction-row { display: flex; align-items: center; gap: 10px; background: #161b22; border: 1px solid #21262d; border-radius: 8px; padding: 10px 12px; margin-bottom: 7px; font-size: 13px; }
+.correction-row .from, .correction-row .to { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.correction-row .arrow { color: #8b949e; }
+.correction-row .del { width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; background: transparent; border: 1px solid #30363d; border-radius: 6px; color: #f85149; font-size: 17px; cursor: pointer; flex-shrink: 0; }
+.correction-row .del:hover { background: #f85149; color: #fff; border-color: #f85149; }
+.correction-empty { color: #484f58; font-size: 13px; padding: 14px 4px; }
 .empty { text-align: center; padding: 40px 0; color: #484f58; font-size: 14px; }
 .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 20px; }
 .actions button {
@@ -219,6 +232,16 @@ body {
     <button class="btn-save" onclick="save()">💾 保存</button>
   </div>
   <div id="list"></div>
+  <section class="corrections">
+    <h2>识别纠错</h2>
+    <p>最终识别文本提交前应用，适用于所有 ASR 服务。填写实际误识写法和标准术语；英文按完整单词匹配。与热词分开生效。</p>
+    <div class="correction-entry">
+      <input id="correctionFrom" type="text" placeholder="识别成，例如实际误识写法" aria-label="识别成">
+      <input id="correctionTo" type="text" placeholder="改为，例如 Aster" aria-label="改为">
+      <button type="button" onclick="addCorrection()">添加纠错</button>
+    </div>
+    <div id="correctionList"></div>
+  </section>
   <div id="status"></div>
   <div class="tip">
     <b>权重</b>（1–10）：数值越高，ASR 越倾向选择该词。<br>
@@ -226,7 +249,7 @@ body {
   </div>
 </div>
 <script>
-let data = { hotwords: {} };
+let data = { hotwords: {}, corrections: {} };
 let dirty = false;
 let insights = { topLearned: [] };
 let learningChart = null;
@@ -328,7 +351,7 @@ function renderUsage(usage) {
 function load() {
   fetch('/vocab/api/hotwords')
     .then(r => r.json())
-    .then(d => { data = d; render(); })
+    .then(d => { data = d; data.hotwords = data.hotwords || {}; data.corrections = data.corrections || {}; render(); renderCorrections(); })
     .catch(err => showStatus('加载失败: ' + err, true));
 }
 function render() {
@@ -357,6 +380,30 @@ function render() {
     const deleteButton = document.createElement('button'); deleteButton.className = 'del'; deleteButton.type = 'button'; deleteButton.textContent = '✕';
     deleteButton.addEventListener("click", () => remove(wordInput.dataset.word)); row.append(wordCell, label, weightCell, deleteButton); list.appendChild(row);
   });
+}
+function renderCorrections() {
+  const list = document.getElementById('correctionList'); list.replaceChildren();
+  const entries = Object.entries(data.corrections || {}).sort((a, b) => a[0].localeCompare(b[0]));
+  if (!entries.length) {
+    const empty = document.createElement('div'); empty.className = 'correction-empty'; empty.textContent = '暂无纠正规则'; list.appendChild(empty); return;
+  }
+  entries.forEach(([from, to]) => {
+    const row = document.createElement('div'); row.className = 'correction-row';
+    const source = document.createElement('span'); source.className = 'from'; source.textContent = from;
+    const arrow = document.createElement('span'); arrow.className = 'arrow'; arrow.textContent = '→';
+    const target = document.createElement('span'); target.className = 'to'; target.textContent = to;
+    const button = document.createElement('button'); button.type = 'button'; button.className = 'del'; button.textContent = '✕'; button.setAttribute('aria-label', '删除纠正规则');
+    button.addEventListener('click', () => { delete data.corrections[from]; dirty = true; renderCorrections(); });
+    row.append(source, arrow, target, button); list.appendChild(row);
+  });
+}
+function addCorrection() {
+  const fromInput = document.getElementById('correctionFrom');
+  const toInput = document.getElementById('correctionTo');
+  const from = fromInput.value.trim(); const to = toInput.value.trim();
+  if (!from || !to) { showStatus('请填写误识写法和标准术语', true); return; }
+  data.corrections = data.corrections || {}; data.corrections[from] = to; dirty = true;
+  fromInput.value = ''; toInput.value = ''; renderCorrections(); fromInput.focus();
 }
 function getWeight(input) {
   const row = input.closest('.row');
@@ -459,7 +506,8 @@ body {
 .sep { color: #30363d; font-size: 13px; }
 .cards-header { font-size: 13px; color: #8b949e; margin-bottom: 10px; }
 .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px; }
-@media (max-width: 600px) { .cards { grid-template-columns: repeat(1, 1fr); } }
+.deepseek-cards { grid-template-columns: repeat(4, 1fr); }
+@media (max-width: 600px) { .cards { grid-template-columns: repeat(1, 1fr); } .deepseek-cards { grid-template-columns: repeat(2, 1fr); } }
 .card { background: #161b22; border-radius: 10px; padding: 16px; text-align: center; border: 1px solid #21262d; }
 .card .val { font-size: 28px; font-weight: 700; line-height: 1.2; }
 .card .lbl { font-size: 12px; color: #8b949e; margin-top: 4px; }
@@ -494,6 +542,8 @@ body {
   </div>
   <div class="cards-header">所选范围合计</div>
   <div class="cards" id="cards"></div>
+  <div class="cards-header">DeepSeek 上下文纠错（只保存计数，不保存识别文本）</div>
+  <div class="cards deepseek-cards" id="deepSeekCards"></div>
   <div id="chart"></div>
   <div style="font-size:13px;color:#8b949e;margin:20px 0 10px 0;font-weight:500;">📝 全年生成字数热力图</div>
   <div id="heatmap"></div>
@@ -524,7 +574,8 @@ function fetchData() {
   fetch('/stats/api/data?start=' + start + '&end=' + end)
     .then(r => r.json()).then(data => {
       updateCards(data.summary); updateChart(data.daily, start, end);
-      const activeDays = data.daily.filter(d => d.voiceInputCount || d.characterCount || d.autoSubmitCount).length;
+      updateDeepSeekCards(data.summary);
+      const activeDays = data.daily.filter(d => d.voiceInputCount || d.characterCount || d.autoSubmitCount || d.deepSeekRequestCount).length;
       document.getElementById('footer').textContent = '数据范围: ' + start + ' ~ ' + end + ' | ' + activeDays + ' 天有活动';
     }).catch(err => { document.getElementById('footer').textContent = '加载失败: ' + err; });
 }
@@ -538,6 +589,12 @@ function updateCards(summary) {
   const keys = ['voiceInputCount', 'characterCount', 'autoSubmitCount'];
   const html = keys.map((k, i) => '<div class="card c' + i + '"><div class="val">' + (summary[k] || 0).toLocaleString() + '</div><div class="lbl">' + labels[i] + '</div></div>').join('');
   document.getElementById('cards').innerHTML = html;
+}
+function updateDeepSeekCards(summary) {
+  const labels = ['请求次数', '成功响应', '发生改写的转写', '改写片段'];
+  const keys = ['deepSeekRequestCount', 'deepSeekSuccessCount', 'deepSeekRewriteCount', 'deepSeekRewriteItemCount'];
+  const html = keys.map((k, i) => '<div class="card c' + (i % 3) + '"><div class="val">' + (summary[k] || 0).toLocaleString() + '</div><div class="lbl">' + labels[i] + '</div></div>').join('');
+  document.getElementById('deepSeekCards').innerHTML = html;
 }
 function trendDaily(daily) {
   return daily.filter(row => {
@@ -566,13 +623,15 @@ function updateChart(daily, start, end) {
   const voiceInput = trend.map(d => d.voiceInputCount || 0);
   const characterCount = trend.map(d => d.characterCount || 0);
   const autoSubmit = trend.map(d => d.autoSubmitCount || 0);
+  const deepSeekSuccess = trend.map(d => d.deepSeekSuccessCount || 0);
+  const deepSeekRewrite = trend.map(d => d.deepSeekRewriteCount || 0);
   chart.setOption({
     tooltip: { trigger: 'axis', backgroundColor: '#1c2128', borderColor: '#30363d', textStyle: { color: '#c9d1d9', fontSize: 13 } },
-    legend: { data: ['语音输入', '生成字数', '自动提交'], textStyle: { color: '#8b949e' }, top: 8 },
+    legend: { data: ['语音输入', '生成字数', '自动提交', 'DeepSeek 成功', 'DeepSeek 改写'], textStyle: { color: '#8b949e' }, top: 8 },
     grid: { left: 50, right: 70, top: 50, bottom: 30 },
     xAxis: { type: 'category', data: dates, axisLine: { lineStyle: { color: '#21262d' } }, axisLabel: { color: '#8b949e', fontSize: 11 }, splitLine: { show: false } },
     yAxis: [{ type: 'value', name: '次数', position: 'left', axisLine: { show: false }, axisLabel: { color: '#8b949e', fontSize: 11 }, splitLine: { lineStyle: { color: '#21262d', type: 'dashed' } } }, { type: 'value', name: '字数', position: 'right', axisLine: { show: false }, axisLabel: { color: '#8b949e', fontSize: 11 }, splitLine: { show: false } }],
-    series: [{ name: '语音输入', type: 'line', yAxisIndex: 0, smooth: true, data: voiceInput, itemStyle: { color: '#79c0ff' }, lineStyle: { width: 3 }, symbol: 'circle', symbolSize: 6, areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: 'rgba(121, 192, 255, 0.3)' }, { offset: 1, color: 'rgba(121, 192, 255, 0.02)' }]) }, animationDuration: 400, animationEasing: 'cubicOut' }, { name: '生成字数', type: 'line', yAxisIndex: 1, smooth: true, data: characterCount, itemStyle: { color: '#7ee787' }, lineStyle: { width: 3 }, symbol: 'circle', symbolSize: 6, areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: 'rgba(126, 231, 135, 0.25)' }, { offset: 1, color: 'rgba(126, 231, 135, 0.01)' }]) }, animationDuration: 400 }, { name: '自动提交', type: 'line', yAxisIndex: 0, smooth: true, data: autoSubmit, itemStyle: { color: '#d2a8ff' }, lineStyle: { width: 3, type: 'dashed' }, symbol: 'circle', symbolSize: 6, animationDuration: 400 }]
+    series: [{ name: '语音输入', type: 'line', yAxisIndex: 0, smooth: true, data: voiceInput, itemStyle: { color: '#79c0ff' }, lineStyle: { width: 3 }, symbol: 'circle', symbolSize: 6, areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: 'rgba(121, 192, 255, 0.3)' }, { offset: 1, color: 'rgba(121, 192, 255, 0.02)' }]) }, animationDuration: 400, animationEasing: 'cubicOut' }, { name: '生成字数', type: 'line', yAxisIndex: 1, smooth: true, data: characterCount, itemStyle: { color: '#7ee787' }, lineStyle: { width: 3 }, symbol: 'circle', symbolSize: 6, areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: 'rgba(126, 231, 135, 0.25)' }, { offset: 1, color: 'rgba(126, 231, 135, 0.01)' }]) }, animationDuration: 400 }, { name: '自动提交', type: 'line', yAxisIndex: 0, smooth: true, data: autoSubmit, itemStyle: { color: '#d2a8ff' }, lineStyle: { width: 3, type: 'dashed' }, symbol: 'circle', symbolSize: 6, animationDuration: 400 }, { name: 'DeepSeek 成功', type: 'line', yAxisIndex: 0, smooth: true, data: deepSeekSuccess, itemStyle: { color: '#f2cc60' }, lineStyle: { width: 2 }, symbol: 'circle', symbolSize: 5 }, { name: 'DeepSeek 改写', type: 'line', yAxisIndex: 0, smooth: true, data: deepSeekRewrite, itemStyle: { color: '#ff7b72' }, lineStyle: { width: 2 }, symbol: 'diamond', symbolSize: 6 }]
   }, true); chart.resize();
 }
 function updateHeatmap(data, year) {
@@ -629,7 +688,7 @@ def daily_summaries(events: list[dict], start: datetime, end: datetime) -> list[
         ts = ts.astimezone(timezone.utc)
         day = ts.strftime("%Y-%m-%d")
         if day not in daily:
-            daily[day] = {"date": day, "voiceInputCount": 0, "characterCount": 0, "autoSubmitCount": 0}
+            daily[day] = {"date": day, "voiceInputCount": 0, "characterCount": 0, "autoSubmitCount": 0, "deepSeekRequestCount": 0, "deepSeekSuccessCount": 0, "deepSeekRewriteCount": 0, "deepSeekRewriteItemCount": 0}
         event_type = ev.get("type", "")
         if event_type == "voice_started":
             daily[day]["voiceInputCount"] += 1
@@ -637,6 +696,14 @@ def daily_summaries(events: list[dict], start: datetime, end: datetime) -> list[
             daily[day]["characterCount"] += ev.get("characterCount", 0)
         elif event_type == "auto_submitted":
             daily[day]["autoSubmitCount"] += 1
+        elif event_type == "deepseek_correction":
+            daily[day]["deepSeekRequestCount"] += 1
+            if ev.get("succeeded") is True:
+                daily[day]["deepSeekSuccessCount"] += 1
+                rewrite_count = ev.get("rewriteCount", 0)
+                if isinstance(rewrite_count, int) and not isinstance(rewrite_count, bool) and rewrite_count > 0:
+                    daily[day]["deepSeekRewriteCount"] += 1
+                    daily[day]["deepSeekRewriteItemCount"] += rewrite_count
     result = sorted(daily.values(), key=lambda x: x["date"])
     if result:
         cursor = datetime.strptime(result[0]["date"], "%Y-%m-%d").date()
@@ -649,14 +716,14 @@ def daily_summaries(events: list[dict], start: datetime, end: datetime) -> list[
                 filled.append(result[idx])
                 idx += 1
             else:
-                filled.append({"date": cursor_str, "voiceInputCount": 0, "characterCount": 0, "autoSubmitCount": 0})
+                filled.append({"date": cursor_str, "voiceInputCount": 0, "characterCount": 0, "autoSubmitCount": 0, "deepSeekRequestCount": 0, "deepSeekSuccessCount": 0, "deepSeekRewriteCount": 0, "deepSeekRewriteItemCount": 0})
             cursor += timedelta(days=1)
         result = filled
     return result
 
 
 def total_summary(events: list[dict], start: datetime, end: datetime) -> dict:
-    total = {"voiceInputCount": 0, "characterCount": 0, "autoSubmitCount": 0}
+    total = {"voiceInputCount": 0, "characterCount": 0, "autoSubmitCount": 0, "deepSeekRequestCount": 0, "deepSeekSuccessCount": 0, "deepSeekRewriteCount": 0, "deepSeekRewriteItemCount": 0}
     for ev in events:
         ts = parse_iso(ev.get("timestamp", ""))
         if ts is None or ts < start or ts > end:
@@ -668,6 +735,14 @@ def total_summary(events: list[dict], start: datetime, end: datetime) -> dict:
             total["characterCount"] += ev.get("characterCount", 0)
         elif event_type == "auto_submitted":
             total["autoSubmitCount"] += 1
+        elif event_type == "deepseek_correction":
+            total["deepSeekRequestCount"] += 1
+            if ev.get("succeeded") is True:
+                total["deepSeekSuccessCount"] += 1
+                rewrite_count = ev.get("rewriteCount", 0)
+                if isinstance(rewrite_count, int) and not isinstance(rewrite_count, bool) and rewrite_count > 0:
+                    total["deepSeekRewriteCount"] += 1
+                    total["deepSeekRewriteItemCount"] += rewrite_count
     return total
 
 

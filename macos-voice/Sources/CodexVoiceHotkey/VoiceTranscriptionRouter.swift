@@ -30,6 +30,10 @@ protocol VoiceSubmitting: AnyObject {
     func submit()
 }
 
+protocol ContextualTranscriptionCorrecting: AnyObject {
+    func correct(_ text: String, knownTerms: [String], completion: @escaping (String) -> Void)
+}
+
 protocol VoiceIndicatorPresenting: AnyObject {
     /// 展示某个状态的文字内容（倒计时秒数 / 庆祝 emoji / 错误信息）。
     func show(_ state: VoiceIndicatorState, text: String?)
@@ -46,25 +50,36 @@ final class VoiceTranscriptionRouter {
 
     private let injector: VoiceTextInjecting
     private let indicator: VoiceIndicatorPresenting
-    private let commandResolver: NaturalVoiceCommandResolver
+    private let corrections: () -> [String: String]
+    private let knownTerms: () -> [String]
+    private let contextualCorrector: ContextualTranscriptionCorrecting?
     private let session = TranscriptionSession()
     /// Full text of whatever is currently displayed in the terminal input
     /// field.  Used both to compute the minimal delta against the next
     /// partial result and to know how much to backspace when the final
     /// result is committed.
     private var displayedVoiceText = ""
+    private var commitGeneration: UInt64 = 0
 
     init(
         aliases: [String: String],
         injector: VoiceTextInjecting,
-        indicator: VoiceIndicatorPresenting
+        indicator: VoiceIndicatorPresenting,
+        corrections: @escaping () -> [String: String] = { [:] },
+        knownTerms: @escaping () -> [String] = { [] },
+        contextualCorrector: ContextualTranscriptionCorrecting? = nil
     ) {
-        self.commandResolver = NaturalVoiceCommandResolver(aliases: aliases)
+        // Keep the parameter for compatibility with existing callers and saved settings.
+        _ = aliases
         self.injector = injector
         self.indicator = indicator
+        self.corrections = corrections
+        self.knownTerms = knownTerms
+        self.contextualCorrector = contextualCorrector
     }
 
     func beginRecording() {
+        commitGeneration &+= 1
         displayedVoiceText = ""
         indicator.show(.listening, text: nil)
         injector.saveClipboardIfNeeded()
@@ -112,6 +127,7 @@ final class VoiceTranscriptionRouter {
 
     /// Called when recording is cancelled before the final commit.
     func cancelRecording() {
+        commitGeneration &+= 1
         injector.cancelPending()
         injector.restoreClipboard()
     }
@@ -130,7 +146,29 @@ final class VoiceTranscriptionRouter {
     }
 
     private func commitVoiceSpan(_ text: String) {
-        let nextText = commandResolver.resolve(text) ?? text
+        let vocabulary = corrections()
+        let locallyCorrectedText = TranscriptionTextCorrector.apply(text, corrections: vocabulary)
+        guard let contextualCorrector, !locallyCorrectedText.isEmpty else {
+            finishVoiceSpan(locallyCorrectedText)
+            return
+        }
+
+        commitGeneration &+= 1
+        let generation = commitGeneration
+        indicator.show(.transcribing, text: nil)
+        contextualCorrector.correct(
+            locallyCorrectedText,
+            knownTerms: knownTerms()
+        ) { [weak self] correctedText in
+            DispatchQueue.main.async {
+                guard let self, self.commitGeneration == generation else { return }
+                self.finishVoiceSpan(correctedText)
+            }
+        }
+    }
+
+    private func finishVoiceSpan(_ text: String) {
+        let nextText = text
         let prefixCount = Self.commonPrefixCount(displayedVoiceText, nextText)
         let backspaces = displayedVoiceText.count - prefixCount
         let suffix = String(nextText.dropFirst(prefixCount))

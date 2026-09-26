@@ -112,7 +112,13 @@ final class VoiceController: VoiceControlling {
         transcriptionRouter = VoiceTranscriptionRouter(
             aliases: preferences.aliases,
             injector: injector,
-            indicator: indicator
+            indicator: indicator,
+            corrections: { CustomVocabulary.load().corrections },
+            knownTerms: Self.contextualCorrectionTerms,
+            contextualCorrector: Self.makeContextualCorrector(
+                preferences,
+                usageStatsRecorder: self.usageStatsRecorder
+            )
         )
         bindTranscriptionRouterCallbacks()
         bindTranscriberCallbacks()
@@ -406,7 +412,13 @@ final class VoiceController: VoiceControlling {
             transcriptionRouter = VoiceTranscriptionRouter(
                 aliases: preferences.aliases,
                 injector: injector,
-                indicator: indicator
+                indicator: indicator,
+                corrections: { CustomVocabulary.load().corrections },
+                knownTerms: Self.contextualCorrectionTerms,
+                contextualCorrector: Self.makeContextualCorrector(
+                    preferences,
+                    usageStatsRecorder: self.usageStatsRecorder
+                )
             )
             bindTranscriptionRouterCallbacks()
             log("设置已保存：快捷键 \(preferences.shortcut.displayName)，口令 \(preferences.aliases.count) 条。")
@@ -438,6 +450,37 @@ final class VoiceController: VoiceControlling {
                 log("无法写入转写统计：\(error.localizedDescription)")
             }
         }
+    }
+
+    private static func makeContextualCorrector(
+        _ preferences: VoicePreferences,
+        usageStatsRecorder: (any UsageStatsRecording)?
+    ) -> ContextualTranscriptionCorrecting? {
+        guard preferences.contextualCorrectionEnabled,
+              !preferences.deepSeek.apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return nil
+        }
+        return DeepSeekContextualTranscriptionCorrector(settings: preferences.deepSeek) { [weak usageStatsRecorder] succeeded, rewriteCount in
+            DispatchQueue.main.async {
+                do {
+                    try usageStatsRecorder?.recordDeepSeekCorrection(
+                        succeeded: succeeded,
+                        rewriteCount: rewriteCount,
+                        at: Date()
+                    )
+                } catch {
+                    log("无法写入 DeepSeek 纠错统计：\(error.localizedDescription)")
+                }
+            }
+        }
+    }
+
+    private static func contextualCorrectionTerms() -> [String] {
+        let vocabulary = CustomVocabulary.load()
+        let hotwords = vocabulary.hotwords.sorted { lhs, rhs in
+            lhs.value == rhs.value ? lhs.key < rhs.key : lhs.value > rhs.value
+        }.prefix(80).map(\.key)
+        return Array(Set(hotwords + Array(vocabulary.corrections.values)))
     }
 
     private func recordUsage(_ action: (any UsageStatsRecording) throws -> Void) {

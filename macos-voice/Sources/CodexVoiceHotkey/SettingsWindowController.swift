@@ -49,14 +49,13 @@ enum ReleaseHoldMode: String, CaseIterable {
 }
 
 enum SettingsPane: String, CaseIterable {
-    case general, transcription, personalization, aliases
+    case general, transcription, correctionModel
 
     var title: String {
         switch self {
         case .general: "常规"
         case .transcription: "语音识别"
-        case .personalization: "个性化"
-        case .aliases: "口令与命令"
+        case .correctionModel: "纠错大模型"
         }
     }
 }
@@ -98,8 +97,15 @@ final class SettingsWindowController: NSWindowController {
     private let transcriptionProviderPopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private let providerFeatureLabel = NSTextField(labelWithString: "")
     private let apiKeyField = NSSecureTextField(string: "")
+    private let deepSeekAPIKeyField = NSSecureTextField(string: "")
+    private let deepSeekBaseURLField = NSTextField(string: "")
+    private let deepSeekModelField = NSTextField(string: "")
     private let volcengineAPIKeyField = NSSecureTextField(string: "")
-    private let aliasesStack = NSStackView()
+    private let contextualCorrectionCheckbox = NSButton(
+        checkboxWithTitle: "使用 DeepSeek 上下文纠错",
+        target: nil,
+        action: nil
+    )
     private let autoSubmitCheckbox = NSButton(
         checkboxWithTitle: "自动提交语音输入",
         target: nil,
@@ -196,8 +202,7 @@ final class SettingsWindowController: NSWindowController {
 
         addPane(buildGeneralPane(), for: .general)
         addPane(buildTranscriptionPane(), for: .transcription)
-        addPane(buildPersonalizationPane(), for: .personalization)
-        addPane(buildAliasesPane(), for: .aliases)
+        addPane(buildCorrectionModelPane(), for: .correctionModel)
         selectPane(.general)
     }
 
@@ -276,11 +281,7 @@ final class SettingsWindowController: NSWindowController {
         releaseHoldPopup.action = #selector(releaseHoldChanged)
         releaseHoldPopup.widthAnchor.constraint(equalToConstant: 180).isActive = true
         pane.addArrangedSubview(releaseHoldPopup)
-        return pane
-    }
 
-    private func buildPersonalizationPane() -> NSView {
-        let pane = buildPaneStack()
         pane.addArrangedSubview(sectionLabel("提交庆祝表情"))
         let celebrationHint = NSTextField(labelWithString: "语音自动提交后随机弹出的内置表情包。")
         celebrationHint.textColor = .secondaryLabelColor
@@ -294,13 +295,9 @@ final class SettingsWindowController: NSWindowController {
         celebrationPackPopup.widthAnchor.constraint(equalToConstant: 280).isActive = true
         pane.addArrangedSubview(celebrationPackPopup)
 
-        pane.addArrangedSubview(sectionLabel("快捷入口"))
         let statsButton = NSButton(title: "查看使用统计…", target: self, action: #selector(openUsageStats))
         statsButton.bezelStyle = .rounded
         pane.addArrangedSubview(statsButton)
-        let vocabButton = NSButton(title: "自定义热词…", target: self, action: #selector(openVocab))
-        vocabButton.bezelStyle = .rounded
-        pane.addArrangedSubview(vocabButton)
         return pane
     }
 
@@ -328,41 +325,31 @@ final class SettingsWindowController: NSWindowController {
         return pane
     }
 
-    private func buildAliasesPane() -> NSView {
+    private func buildCorrectionModelPane() -> NSView {
         let pane = buildPaneStack()
-        pane.addArrangedSubview(sectionLabel("口令与命令"))
-        let hint = NSTextField(labelWithString: "仅完整匹配口令时替换；例如“目标” → “/goal”。")
-        hint.textColor = .secondaryLabelColor
-        hint.font = .systemFont(ofSize: 12)
-        pane.addArrangedSubview(hint)
+        pane.addArrangedSubview(sectionLabel("上下文纠错"))
+        contextualCorrectionCheckbox.state = initialPreferences.contextualCorrectionEnabled ? .on : .off
+        pane.addArrangedSubview(contextualCorrectionCheckbox)
+        let correctionPrivacyHint = NSTextField(labelWithString: "启用后，每次最终转写文本会发送给所配置的大模型做中英文上下文纠错。仅提交转写文本和词表术语，不上传音频；请求失败时保留 ASR 原文。")
+        correctionPrivacyHint.textColor = .secondaryLabelColor
+        correctionPrivacyHint.font = .systemFont(ofSize: 12)
+        correctionPrivacyHint.maximumNumberOfLines = 0
+        correctionPrivacyHint.preferredMaxLayoutWidth = 460
+        pane.addArrangedSubview(correctionPrivacyHint)
+        addFieldRow(root: pane, title: "API Key", field: deepSeekAPIKeyField, value: initialPreferences.deepSeek.apiKey)
+        addFieldRow(root: pane, title: "API 地址", field: deepSeekBaseURLField, value: initialPreferences.deepSeek.baseURL)
+        addFieldRow(root: pane, title: "模型名称", field: deepSeekModelField, value: initialPreferences.deepSeek.model)
 
-        let presetHint = NSTextField(labelWithString: "默认示例已预填，可直接修改；点击“+ 添加口令”继续增加自己的口令。")
-        presetHint.textColor = .secondaryLabelColor
-        presetHint.font = .systemFont(ofSize: 12)
-        pane.addArrangedSubview(presetHint)
-
-        aliasesStack.orientation = .vertical
-        aliasesStack.alignment = .leading
-        aliasesStack.spacing = 10
-        aliasesStack.translatesAutoresizingMaskIntoConstraints = false
-        let scroll = NSScrollView()
-        scroll.hasVerticalScroller = true
-        scroll.borderType = .bezelBorder
-        scroll.documentView = aliasesStack
-        scroll.translatesAutoresizingMaskIntoConstraints = false
-        scroll.widthAnchor.constraint(equalToConstant: 472).isActive = true
-        scroll.heightAnchor.constraint(equalToConstant: 220).isActive = true
-        NSLayoutConstraint.activate([
-            aliasesStack.leadingAnchor.constraint(equalTo: scroll.contentView.leadingAnchor),
-            aliasesStack.trailingAnchor.constraint(equalTo: scroll.contentView.trailingAnchor),
-            aliasesStack.topAnchor.constraint(equalTo: scroll.contentView.topAnchor),
-            aliasesStack.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor)
-        ])
-        pane.addArrangedSubview(scroll)
-
-        initialPreferences.aliases.sorted(by: { $0.key < $1.key }).forEach { addAliasRow(phrase: $0.key, command: $0.value) }
-        let add = NSButton(title: "+ 添加口令", target: self, action: #selector(addAlias))
-        pane.addArrangedSubview(add)
+        pane.addArrangedSubview(sectionLabel("纠错参考词表"))
+        let vocabularyHint = NSTextField(labelWithString: "词表中的热词和纠错目标会作为上下文传给大模型参考；最多包含权重最高的 80 个热词。")
+        vocabularyHint.textColor = .secondaryLabelColor
+        vocabularyHint.font = .systemFont(ofSize: 12)
+        vocabularyHint.maximumNumberOfLines = 0
+        vocabularyHint.preferredMaxLayoutWidth = 460
+        pane.addArrangedSubview(vocabularyHint)
+        let vocabButton = NSButton(title: "管理热词与纠错词…", target: self, action: #selector(openVocab))
+        vocabButton.bezelStyle = .rounded
+        pane.addArrangedSubview(vocabButton)
         return pane
     }
 
@@ -440,7 +427,7 @@ final class SettingsWindowController: NSWindowController {
         row.spacing = 8
 
         let label = NSTextField(labelWithString: title)
-        label.widthAnchor.constraint(equalToConstant: 72).isActive = true
+        label.widthAnchor.constraint(equalToConstant: 96).isActive = true
 
         field.stringValue = value
         field.widthAnchor.constraint(equalToConstant: 360).isActive = true
@@ -448,18 +435,6 @@ final class SettingsWindowController: NSWindowController {
         row.addArrangedSubview(label)
         row.addArrangedSubview(field)
         root.addArrangedSubview(row)
-    }
-
-    private func addAliasRow(phrase: String = "", command: String = "") {
-        let row = AliasRowView(phrase: phrase, command: command) { [weak self] row in
-            self?.aliasesStack.removeArrangedSubview(row)
-            row.removeFromSuperview()
-        }
-        aliasesStack.addArrangedSubview(row)
-    }
-
-    @objc private func addAlias() {
-        addAliasRow()
     }
 
     @objc private func cancel() {
@@ -477,23 +452,26 @@ final class SettingsWindowController: NSWindowController {
     }
 
     @objc private func save() {
-        var aliases: [String: String] = [:]
-        aliasesStack.arrangedSubviews.compactMap { $0 as? AliasRowView }.forEach { row in
-            let phrase = row.phraseValue.trimmingCharacters(in: .whitespacesAndNewlines)
-            let command = row.commandValue.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !phrase.isEmpty, !command.isEmpty { aliases[phrase] = command }
-        }
         let shortcut = shortcutRecorder.shortcut
         guard let rawProvider = transcriptionProviderPopup.selectedItem?.representedObject as? String,
               let provider = VoiceTranscriptionProvider(rawValue: rawProvider)
         else { return }
         let siliconFlow = SiliconFlowSettings(apiKey: apiKeyField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines))
+        let deepSeekBaseURL = deepSeekBaseURLField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let deepSeekModel = deepSeekModelField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let deepSeek = DeepSeekSettings(
+            apiKey: deepSeekAPIKeyField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines),
+            baseURL: deepSeekBaseURL.isEmpty ? DeepSeekSettings.defaultBaseURL : deepSeekBaseURL,
+            model: deepSeekModel.isEmpty ? DeepSeekSettings.defaultModel : deepSeekModel
+        )
         let volcengineAPIKey = volcengineAPIKeyField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         onSave(VoicePreferences(
             shortcut: shortcut,
-            aliases: aliases,
+            aliases: initialPreferences.aliases,
             transcriptionProvider: provider,
             siliconFlow: siliconFlow,
+            deepSeek: deepSeek,
+            contextualCorrectionEnabled: contextualCorrectionCheckbox.state == .on,
             volcengineAppKey: initialPreferences.volcengineAppKey,
             volcengineAccessKey: initialPreferences.volcengineAccessKey,
             volcengineAPIKey: volcengineAPIKey,
@@ -605,51 +583,4 @@ private extension NSEvent.ModifierFlags {
         if contains(.shift) { result.insert(.maskShift) }
         return result
     }
-}
-
-private final class AliasRowView: NSStackView {
-    private let phraseField: NSTextField
-    private let commandField: NSTextField
-    private let onDelete: (AliasRowView) -> Void
-
-    init(phrase: String, command: String, onDelete: @escaping (AliasRowView) -> Void) {
-        phraseField = NSTextField(string: phrase)
-        commandField = NSTextField(string: command)
-        self.onDelete = onDelete
-        super.init(frame: .zero)
-        orientation = .horizontal
-        spacing = 8
-        alignment = .centerY
-        distribution = .fill
-        setupInputField(phraseField, placeholder: "例如：目标")
-        setupInputField(commandField, placeholder: "例如：/goal")
-        phraseField.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        commandField.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        phraseField.widthAnchor.constraint(greaterThanOrEqualToConstant: 180).isActive = true
-        commandField.widthAnchor.constraint(greaterThanOrEqualToConstant: 260).isActive = true
-        addArrangedSubview(phraseField)
-        addArrangedSubview(commandField)
-        addArrangedSubview(NSButton(title: "删除", target: self, action: #selector(deleteRow)))
-    }
-
-    @objc private func deleteRow() {
-        onDelete(self)
-    }
-
-    private func setupInputField(_ field: NSTextField, placeholder: String) {
-        field.isEditable = true
-        field.isSelectable = true
-        field.isBordered = true
-        field.isBezeled = true
-        field.drawsBackground = true
-        field.placeholderString = placeholder
-        field.translatesAutoresizingMaskIntoConstraints = false
-    }
-
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    var phraseValue: String { phraseField.stringValue }
-    var commandValue: String { commandField.stringValue }
 }

@@ -4,12 +4,20 @@ struct UsageStatsSummary: Equatable {
     var voiceInputCount = 0
     var characterCount = 0
     var autoSubmitCount = 0
+    var deepSeekRequestCount = 0
+    var deepSeekSuccessCount = 0
+    var deepSeekRewriteCount = 0
+    var deepSeekRewriteItemCount = 0
 
     static func + (lhs: UsageStatsSummary, rhs: UsageStatsSummary) -> UsageStatsSummary {
         UsageStatsSummary(
             voiceInputCount: lhs.voiceInputCount + rhs.voiceInputCount,
             characterCount: lhs.characterCount + rhs.characterCount,
-            autoSubmitCount: lhs.autoSubmitCount + rhs.autoSubmitCount
+            autoSubmitCount: lhs.autoSubmitCount + rhs.autoSubmitCount,
+            deepSeekRequestCount: lhs.deepSeekRequestCount + rhs.deepSeekRequestCount,
+            deepSeekSuccessCount: lhs.deepSeekSuccessCount + rhs.deepSeekSuccessCount,
+            deepSeekRewriteCount: lhs.deepSeekRewriteCount + rhs.deepSeekRewriteCount,
+            deepSeekRewriteItemCount: lhs.deepSeekRewriteItemCount + rhs.deepSeekRewriteItemCount
         )
     }
 }
@@ -20,24 +28,29 @@ enum UsageStatsEvent: Codable, Equatable {
     case voiceStarted(timestamp: Date)
     case transcriptionCommitted(timestamp: Date, characterCount: Int)
     case autoSubmitted(timestamp: Date)
+    case deepSeekCorrection(timestamp: Date, succeeded: Bool, rewriteCount: Int)
 
     private enum CodingKeys: String, CodingKey {
         case timestamp
         case type
         case characterCount
+        case succeeded
+        case rewriteCount
     }
 
     private enum EventType: String, Codable {
         case voiceStarted = "voice_started"
         case transcriptionCommitted = "transcription_committed"
         case autoSubmitted = "auto_submitted"
+        case deepSeekCorrection = "deepseek_correction"
     }
 
     var timestamp: Date {
         switch self {
         case .voiceStarted(let timestamp),
              .transcriptionCommitted(let timestamp, _),
-             .autoSubmitted(let timestamp):
+             .autoSubmitted(let timestamp),
+             .deepSeekCorrection(let timestamp, _, _):
             return timestamp
         }
     }
@@ -50,6 +63,13 @@ enum UsageStatsEvent: Codable, Equatable {
             return UsageStatsSummary(characterCount: characterCount)
         case .autoSubmitted:
             return UsageStatsSummary(autoSubmitCount: 1)
+        case .deepSeekCorrection(_, let succeeded, let rewriteCount):
+            return UsageStatsSummary(
+                deepSeekRequestCount: 1,
+                deepSeekSuccessCount: succeeded ? 1 : 0,
+                deepSeekRewriteCount: succeeded && rewriteCount > 0 ? 1 : 0,
+                deepSeekRewriteItemCount: succeeded ? rewriteCount : 0
+            )
         }
     }
 
@@ -67,6 +87,12 @@ enum UsageStatsEvent: Codable, Equatable {
             )
         case .autoSubmitted:
             self = .autoSubmitted(timestamp: timestamp)
+        case .deepSeekCorrection:
+            self = .deepSeekCorrection(
+                timestamp: timestamp,
+                succeeded: try container.decode(Bool.self, forKey: .succeeded),
+                rewriteCount: try container.decode(Int.self, forKey: .rewriteCount)
+            )
         }
     }
 
@@ -81,6 +107,10 @@ enum UsageStatsEvent: Codable, Equatable {
             try container.encode(characterCount, forKey: .characterCount)
         case .autoSubmitted:
             try container.encode(EventType.autoSubmitted, forKey: .type)
+        case .deepSeekCorrection(_, let succeeded, let rewriteCount):
+            try container.encode(EventType.deepSeekCorrection, forKey: .type)
+            try container.encode(succeeded, forKey: .succeeded)
+            try container.encode(rewriteCount, forKey: .rewriteCount)
         }
     }
 }
@@ -91,6 +121,11 @@ protocol UsageStatsRecording: AnyObject {
     func recordVoiceStarted(at date: Date) throws
     func recordTranscriptionCommitted(text: String, at date: Date) throws
     func recordAutoSubmitted(at date: Date) throws
+    func recordDeepSeekCorrection(succeeded: Bool, rewriteCount: Int, at date: Date) throws
+}
+
+extension UsageStatsRecording {
+    func recordDeepSeekCorrection(succeeded: Bool, rewriteCount: Int, at date: Date) throws {}
 }
 
 // MARK: - UsageStatsStore
@@ -128,6 +163,14 @@ final class UsageStatsStore: UsageStatsRecording {
 
     func recordAutoSubmitted(at date: Date = Date()) throws {
         try append(.autoSubmitted(timestamp: date))
+    }
+
+    func recordDeepSeekCorrection(succeeded: Bool, rewriteCount: Int, at date: Date = Date()) throws {
+        try append(.deepSeekCorrection(
+            timestamp: date,
+            succeeded: succeeded,
+            rewriteCount: max(0, rewriteCount)
+        ))
     }
 
     func summary(from start: Date, to end: Date) throws -> UsageStatsSummary {
@@ -176,6 +219,10 @@ struct DailyUsageSummary: Equatable {
     let voiceInputCount: Int
     let characterCount: Int
     let autoSubmitCount: Int
+    let deepSeekRequestCount: Int
+    let deepSeekSuccessCount: Int
+    let deepSeekRewriteCount: Int
+    let deepSeekRewriteItemCount: Int
 }
 
 extension UsageStatsStore {
@@ -195,7 +242,11 @@ extension UsageStatsStore {
                 date: date,
                 voiceInputCount: summary.voiceInputCount,
                 characterCount: summary.characterCount,
-                autoSubmitCount: summary.autoSubmitCount
+                autoSubmitCount: summary.autoSubmitCount,
+                deepSeekRequestCount: summary.deepSeekRequestCount,
+                deepSeekSuccessCount: summary.deepSeekSuccessCount,
+                deepSeekRewriteCount: summary.deepSeekRewriteCount,
+                deepSeekRewriteItemCount: summary.deepSeekRewriteItemCount
             )
         }
     }
