@@ -539,16 +539,17 @@ function updateCards(summary) {
   const html = keys.map((k, i) => '<div class="card c' + i + '"><div class="val">' + (summary[k] || 0).toLocaleString() + '</div><div class="lbl">' + labels[i] + '</div></div>').join('');
   document.getElementById('cards').innerHTML = html;
 }
-function weekdayDaily(daily) {
+function trendDaily(daily) {
   return daily.filter(row => {
     const date = new Date(row.date + 'T00:00:00');
     const day = date.getDay();
-    return day !== 0 && day !== 6;
+    const isWeekday = day !== 0 && day !== 6;
+    return isWeekday || (row.voiceInputCount || 0) > 10;
   });
 }
 function updateChart(daily, start, end) {
-  const weekdays = weekdayDaily(daily);
-  if (!weekdays.length) {
+  const trend = trendDaily(daily);
+  if (!trend.length) {
     chart.clear();
     chart.setOption({
       title: {
@@ -561,10 +562,10 @@ function updateChart(daily, start, end) {
     chart.resize();
     return;
   }
-  const dates = weekdays.map(d => d.date.slice(5));
-  const voiceInput = weekdays.map(d => d.voiceInputCount || 0);
-  const characterCount = weekdays.map(d => d.characterCount || 0);
-  const autoSubmit = weekdays.map(d => d.autoSubmitCount || 0);
+  const dates = trend.map(d => d.date.slice(5));
+  const voiceInput = trend.map(d => d.voiceInputCount || 0);
+  const characterCount = trend.map(d => d.characterCount || 0);
+  const autoSubmit = trend.map(d => d.autoSubmitCount || 0);
   chart.setOption({
     tooltip: { trigger: 'axis', backgroundColor: '#1c2128', borderColor: '#30363d', textStyle: { color: '#c9d1d9', fontSize: 13 } },
     legend: { data: ['语音输入', '生成字数', '自动提交'], textStyle: { color: '#8b949e' }, top: 8 },

@@ -288,12 +288,12 @@ def test_stats_apis_bucket_offset_events_by_utc_day(server, tmp_path):
     assert dict(heatmap["data"])["2026-08-03"] == 0
 
 
-def test_stats_page_filters_weekends_only_from_the_trend_chart():
+def test_stats_page_shows_weekend_trend_only_above_ten_voice_inputs():
     page = web_server.STATS_HTML
 
-    assert "function weekdayDaily(daily)" in page
-    assert "return day !== 0 && day !== 6;" in page
-    assert "const weekdays = weekdayDaily(daily);" in page
-    assert "const dates = weekdays.map(d => d.date.slice(5));" in page
+    assert "function trendDaily(daily)" in page
+    assert "return isWeekday || (row.voiceInputCount || 0) > 10;" in page
+    assert "const trend = trendDaily(daily);" in page
+    assert "const dates = trend.map(d => d.date.slice(5));" in page
     assert "周末不展示趋势数据" in page
     assert "updateCards(data.summary); updateChart(data.daily, start, end);" in page
