@@ -190,11 +190,11 @@ body {
      </div>
    </div>
    <nav class="section-tabs" aria-label="热词管理">
-     <button class="active" type="button" data-panel="panel-prompt">提示词管理</button>
-     <button type="button" data-panel="panel-hotwords">热词管理</button>
+     <button type="button" data-panel="panel-prompt">提示词管理</button>
+     <button class="active" type="button" data-panel="panel-hotwords">热词管理</button>
      <button type="button" data-panel="panel-corrections">识别纠错</button>
    </nav>
-   <section class="panel active" id="panel-prompt">
+   <section class="panel" id="panel-prompt">
      <h2>提示词管理</h2>
      <p>查看和编辑本机保存的提示词模板。模板用于 ASR 最终文本的 DeepSeek 上下文纠错；火山引擎 ASR 本身使用热词表，不读取通用 Prompt。可使用 {{known_terms}} 和 {{recognized_text}} 占位符。</p>
      <label class="field-label" for="promptTemplate">提示词模板</label>
@@ -202,7 +202,7 @@ body {
      <div class="actions"><button class="btn-save" type="button" onclick="savePrompt()">💾 保存模板</button></div>
      <div id="promptStatus" class="section-status" aria-live="polite"></div>
    </section>
-   <section class="panel" id="panel-hotwords">
+   <section class="panel active" id="panel-hotwords">
      <h2>热词管理</h2>
      <p>添加后，火山引擎 ASR 会优先识别这些词汇。</p>
    <div class="search-box">
@@ -300,7 +300,11 @@ function load() {
 }
 function render() {
   const q = (document.getElementById('search').value || '').toLowerCase();
-  const entries = Object.entries(data.hotwords).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  const entries = Object.entries(data.hotwords).sort((a, b) => {
+    const aIsNew = /^新热词\d+$/.test(a[0]);
+    const bIsNew = /^新热词\d+$/.test(b[0]);
+    return aIsNew !== bIsNew ? (aIsNew ? 1 : -1) : b[1] - a[1] || a[0].localeCompare(b[0]);
+  });
   const filtered = q ? entries.filter(([w]) => w.toLowerCase().includes(q)) : entries;
   const list = document.getElementById('list'); list.replaceChildren();
   if (filtered.length === 0) {
