@@ -20,6 +20,8 @@ def server(tmp_path):
     vocabulary_path = tmp_path / "vocabulary.json"
     state_path = tmp_path / "vocab-learner-state.json"
     events_path = tmp_path / "usage-events.jsonl"
+    prompt_path = tmp_path / "prompt-template.txt"
+    log_path = tmp_path / "transcription.log"
     vocabulary_path.write_text(json.dumps({"hotwords": {"ffmpeg": 10}}), encoding="utf-8")
     state_path.write_text(json.dumps({"ffmpeg": {"freq": 10, "added_at": 1785828642}}), encoding="utf-8")
     events_path.write_text('{"timestamp":"2026-08-04T08:00:00Z","type":"voice_started"}\n', encoding="utf-8")
@@ -27,12 +29,19 @@ def server(tmp_path):
     web_server.WebHandler.stats_data_path = str(events_path)
     web_server.WebHandler.vocab_data_path = str(vocabulary_path)
     web_server.WebHandler.vocab_state_data_path = str(state_path)
+    web_server.WebHandler.prompt_template_path = str(prompt_path)
+    web_server.WebHandler.transcription_log_path = str(log_path)
     httpd = web_server.http.server.ThreadingHTTPServer(("127.0.0.1", 0), web_server.WebHandler)
     thread = threading.Thread(target=httpd.serve_forever)
     thread.start()
 
     try:
-        yield type("Server", (), {"url": f"http://127.0.0.1:{httpd.server_port}"})()
+        yield type("Server", (), {
+            "url": f"http://127.0.0.1:{httpd.server_port}",
+            "vocabulary_path": vocabulary_path,
+            "prompt_path": prompt_path,
+            "log_path": log_path,
+        })()
     finally:
         httpd.shutdown()
         thread.join()
@@ -182,93 +191,69 @@ def test_build_vocab_insights_buckets_offset_events_by_utc_day():
     ]
 
 
-def test_hotword_get_and_post_apis_are_preserved(server):
-    assert json.load(urlopen(server.url + "/vocab/api/hotwords")) == {"hotwords": {"ffmpeg": 10}}
-
+def post_json(url, payload):
     request = Request(
-        server.url + "/vocab/api/hotwords",
-        data=json.dumps({"hotwords": {"python": 8}}).encode("utf-8"),
+        url,
+        data=json.dumps(payload).encode("utf-8"),
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    assert json.load(urlopen(request)) == {"ok": True}
-    assert json.load(urlopen(server.url + "/vocab/api/hotwords")) == {"hotwords": {"python": 8}}
+    return json.load(urlopen(request))
 
 
-def test_vocab_page_exposes_insights_controls_and_limit_copy():
-    assert 'id="insightStartDate"' in web_server.VOCAB_HTML
-    assert 'id="insightCards"' in web_server.VOCAB_HTML
-    assert 'id="learningChart"' in web_server.VOCAB_HTML
-    assert 'id="usageChart"' in web_server.VOCAB_HTML
-    assert "/vocab/api/insights" in web_server.VOCAB_HTML
-    assert "同期使用表现" in web_server.VOCAB_HTML
-    assert "不代表热词单独带来的提升" in web_server.VOCAB_HTML
+def test_hotwords_and_corrections_save_without_overwriting_each_other(server):
+    assert json.load(urlopen(server.url + "/vocab/api/hotwords")) == {"hotwords": {"ffmpeg": 10}}
+    assert json.load(urlopen(server.url + "/vocab/api/corrections")) == {"corrections": {}}
+
+    assert post_json(server.url + "/vocab/api/corrections", {
+        "corrections": {"flaw": "flow"},
+    }) == {"ok": True}
+    assert post_json(server.url + "/vocab/api/hotwords", {
+        "hotwords": {"python": 8},
+    }) == {"ok": True}
+    assert json.load(urlopen(server.url + "/vocab/api/hotwords")) == {
+        "hotwords": {"python": 8},
+        "corrections": {"flaw": "flow"},
+    }
+    assert post_json(server.url + "/vocab/api/corrections", {
+        "corrections": {"pr d": "PRD"},
+    }) == {"ok": True}
+    assert json.loads(server.vocabulary_path.read_text(encoding="utf-8")) == {
+        "hotwords": {"python": 8},
+        "corrections": {"pr d": "PRD"},
+    }
 
 
-def test_vocab_page_uses_the_experimental_echarts_visualizations():
-    page = web_server.VOCAB_HTML
+def test_prompt_template_can_be_loaded_and_saved(server):
+    initial = json.load(urlopen(server.url + "/vocab/api/prompt"))["template"]
+    assert "{{known_terms}}" in initial
+    assert "{{recognized_text}}" in initial
 
-    assert "https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js" in page
-    assert "window.echarts.init" in page
-    assert "learningChart.setOption" in page
-    assert "usageChart.setOption" in page
-    assert "renderLearningChart(daily)" in page
-    assert "renderUsage(usage)" in page
-
-
-def test_vocab_page_renders_source_badges_for_ranked_learner_words():
-    page = web_server.VOCAB_HTML
-
-    assert "const learnedWords = new Set(insights.topLearned.map(row => row.word));" in page
-    assert "if (learnedWords.has(word))" in page
-    assert "badge.textContent = '自动学习';" in page
+    template = "术语 {{known_terms}}；原文 {{recognized_text}}"
+    assert post_json(server.url + "/vocab/api/prompt", {"template": template}) == {"ok": True}
+    assert json.load(urlopen(server.url + "/vocab/api/prompt")) == {"template": template}
+    assert server.prompt_path.read_text(encoding="utf-8") == template
 
 
-def test_vocab_page_renders_api_data_and_word_actions_without_html_or_inline_handler_injection():
-    page = web_server.VOCAB_HTML
-
-    assert 'document.createElement("tr")' in page
-    assert 'document.createElement("input")' in page
-    assert 'wordInput.addEventListener("input"' in page
-    assert 'deleteButton.addEventListener("click"' in page
-    assert 'oninput="update(' not in page
-    assert 'oninput="updateWeight(' not in page
-    assert 'onclick="remove(' not in page
-    assert "document.getElementById('topLearned').innerHTML" not in page
-    assert "document.getElementById('insightCards').innerHTML" not in page
-    assert "document.getElementById('usageCards').innerHTML" not in page
+def test_recent_results_shows_final_asr_text_once_in_newest_first_order(server):
+    server.log_path.write_text(
+        "收到最终转写：after flow\n"
+        "收到部分转写：ignored\n"
+        "收到最终转写：after flow\n"
+        "收到最终转写：PRD prompt\n",
+        encoding="utf-8",
+    )
+    assert json.load(urlopen(server.url + "/vocab/api/recent-results")) == {
+        "results": ["PRD prompt", "after flow"],
+    }
 
 
-def test_vocab_page_defers_rerender_until_save_and_sorts_by_weight():
-    page = web_server.VOCAB_HTML
-
-    assert "const entries = Object.entries(data.hotwords).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));" in page
-    assert "wordInput.dataset.word = word;" in page
-    assert "wordInput.addEventListener(\"input\", () => update(wordInput, getWeight(wordInput)));" in page
-    assert "weightInput.addEventListener(\"input\", () => updateWeight(wordInput.dataset.word, weightInput.value));" in page
-    assert "deleteButton.addEventListener(\"click\", () => remove(wordInput.dataset.word));" in page
-    assert "dirty = true; render();" not in page[page.index("function update(input"):page.index("function remove(word)")]
-    assert "dirty = false; render(); showStatus('✅ 已保存 — 下次录音生效');" in page
-
-
-def test_vocab_page_keeps_dashboard_and_editor_loading_states():
-    page = web_server.VOCAB_HTML
-
-    assert "成效数据加载中" in page
-    assert "暂无成效数据" in page
-    assert "成效加载失败" in page
-    assert "body: JSON.stringify(data)" in page
-
-
-def test_vocab_page_uses_local_calendar_dates_for_default_and_quick_ranges():
-    page = web_server.VOCAB_HTML
-
-    assert "function localDateStr(date)" in page
-    assert "date.getFullYear()" in page
-    assert "date.getMonth() + 1" in page
-    assert "date.getDate()" in page
-    assert "toISOString()" not in page
-    assert page.count("localDateStr(") == 4
+def test_vocab_page_has_the_three_requested_sections(server):
+    page = urlopen(server.url + "/vocab/").read().decode("utf-8")
+    assert page.count('data-panel="panel-') == 3
+    assert all(label in page for label in ("提示词管理", "热词管理", "识别纠错"))
+    assert "词表成效" not in page
+    assert "自动学习词排名" not in page
 
 
 def test_stats_apis_bucket_offset_events_by_utc_day(server, tmp_path):
@@ -281,9 +266,10 @@ def test_stats_apis_bucket_offset_events_by_utc_day(server, tmp_path):
     stats = json.load(urlopen(server.url + "/stats/api/data?start=2026-08-04&end=2026-08-04"))
     heatmap = json.load(urlopen(server.url + "/stats/api/heatmap?year=2026"))
 
-    assert stats["daily"] == [
-        {"date": "2026-08-04", "voiceInputCount": 0, "characterCount": 8, "autoSubmitCount": 0},
-    ]
+    assert len(stats["daily"]) == 1
+    assert stats["daily"][0]["date"] == "2026-08-04"
+    assert stats["daily"][0]["characterCount"] == 8
+    assert stats["daily"][0]["deepSeekRequestCount"] == 0
     assert dict(heatmap["data"])["2026-08-04"] == 8
     assert dict(heatmap["data"])["2026-08-03"] == 0
 

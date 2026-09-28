@@ -7,10 +7,7 @@ LAUNCH_AGENTS="$HOME/Library/LaunchAgents"
 LABEL="com.codex.voice-hotkey"
 OLD_APP="$HOME/Applications/Codex Voice Hotkey.app"
 APP="$HOME/Applications/cliMC.app"
-AUTO_CODESIGN_IDENTITY="$(
-  security find-identity -v -p codesigning 2>/dev/null | awk -F '"' '/Apple Development:/ { print $2; exit }'
-)"
-CODESIGN_IDENTITY="${CODEX_VOICE_CODESIGN_IDENTITY:-${AUTO_CODESIGN_IDENTITY:--}}"
+CODESIGN_IDENTITY="${CODEX_VOICE_CODESIGN_IDENTITY:--}"
 
 swift build -c release --package-path "$ROOT"
 mkdir -p "$DESTINATION"

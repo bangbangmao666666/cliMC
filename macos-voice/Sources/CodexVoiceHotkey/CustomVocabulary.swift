@@ -25,12 +25,26 @@ struct CustomVocabulary: Codable, Equatable {
     }
 
     static func load() -> CustomVocabulary {
+        var vocabulary: CustomVocabulary
+        var canPersistMigration = !FileManager.default.fileExists(atPath: fileURL.path)
         do {
             let data = try Data(contentsOf: fileURL)
-            return try JSONDecoder().decode(CustomVocabulary.self, from: data)
+            vocabulary = try JSONDecoder().decode(CustomVocabulary.self, from: data)
+            canPersistMigration = true
         } catch {
-            return CustomVocabulary(hotwords: [:])
+            vocabulary = CustomVocabulary(hotwords: [:])
         }
+
+        let legacyURL = VoicePreferencesStore.baseDirectory.appendingPathComponent("transcription-corrections.json")
+        if let data = try? Data(contentsOf: legacyURL),
+           let legacy = try? JSONDecoder().decode(LegacyCorrections.self, from: data) {
+            let merged = legacy.corrections.filter { vocabulary.corrections[$0.key] == nil }
+            if !merged.isEmpty {
+                vocabulary.corrections.merge(merged) { current, _ in current }
+                if canPersistMigration { try? vocabulary.save() }
+            }
+        }
+        return vocabulary
     }
 
     func save() throws {
@@ -40,6 +54,10 @@ struct CustomVocabulary: Codable, Equatable {
         )
         try JSONEncoder().encode(self).write(to: Self.fileURL, options: .atomic)
     }
+}
+
+private struct LegacyCorrections: Decodable {
+    let corrections: [String: String]
 }
 
 enum TranscriptionTextCorrector {

@@ -50,6 +50,7 @@ final class VoiceTranscriptionRouter {
 
     private let injector: VoiceTextInjecting
     private let indicator: VoiceIndicatorPresenting
+    private let commandResolver: NaturalVoiceCommandResolver
     private let corrections: () -> [String: String]
     private let knownTerms: () -> [String]
     private let contextualCorrector: ContextualTranscriptionCorrecting?
@@ -69,10 +70,9 @@ final class VoiceTranscriptionRouter {
         knownTerms: @escaping () -> [String] = { [] },
         contextualCorrector: ContextualTranscriptionCorrecting? = nil
     ) {
-        // Keep the parameter for compatibility with existing callers and saved settings.
-        _ = aliases
         self.injector = injector
         self.indicator = indicator
+        self.commandResolver = NaturalVoiceCommandResolver(aliases: aliases)
         self.corrections = corrections
         self.knownTerms = knownTerms
         self.contextualCorrector = contextualCorrector
@@ -148,6 +148,10 @@ final class VoiceTranscriptionRouter {
     private func commitVoiceSpan(_ text: String) {
         let vocabulary = corrections()
         let locallyCorrectedText = TranscriptionTextCorrector.apply(text, corrections: vocabulary)
+        if let resolvedCommand = commandResolver.resolve(locallyCorrectedText) {
+            finishVoiceSpan(resolvedCommand)
+            return
+        }
         guard let contextualCorrector, !locallyCorrectedText.isEmpty else {
             finishVoiceSpan(locallyCorrectedText)
             return

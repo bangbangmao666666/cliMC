@@ -72,6 +72,17 @@ p { font-size: 13px; color: #8b949e; margin-bottom: 24px; }
 # 热词编辑器 HTML
 # ═══════════════════════════════════════════════════════
 
+DEFAULT_PROMPT_TEMPLATE = """你是中文语音识别纠错助手。请结合上下文，只修正明确的识别错误。
+保留原句的表达、语气和格式，不要补充、改写或解释内容。
+已知标准术语：
+{{known_terms}}
+
+最终识别文本：
+{{recognized_text}}
+
+只返回 JSON：{\"corrections\":[{\"source\":\"识别文本中连续出现且仅出现一次的原文片段\",\"replacement\":\"正确文本\"}]}。
+只提供局部替换，不确定时返回空数组，最多 5 项。"""
+
 VOCAB_HTML = r"""<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -79,7 +90,6 @@ VOCAB_HTML = r"""<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>cliMC 自定义热词</title>
 <link rel="icon" type="image/png" href="/icon.png">
-<script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body {
@@ -125,19 +135,6 @@ body {
   color: #f85149; font-size: 18px; cursor: pointer; transition: all 0.15s; flex-shrink: 0;
 }
 .row .del:hover { background: #f85149; color: #fff; border-color: #f85149; }
-.corrections { margin: 24px 0 16px; }
-.corrections h2 { color: #f0f6fc; font-size: 18px; margin-bottom: 4px; }
-.corrections > p { color: #8b949e; font-size: 12px; line-height: 1.6; margin: 6px 0 12px; }
-.correction-entry { display: flex; gap: 8px; margin-bottom: 10px; }
-.correction-entry input { min-width: 0; flex: 1; padding: 8px 10px; font-size: 14px; background: #0d1117; color: #c9d1d9; border: 1px solid #30363d; border-radius: 6px; outline: none; }
-.correction-entry input:focus { border-color: #58a6ff; }
-.correction-entry button { padding: 8px 12px; border-radius: 6px; font-size: 13px; cursor: pointer; border: 1px solid #2ea043; background: #238636; color: #fff; white-space: nowrap; }
-.correction-row { display: flex; align-items: center; gap: 10px; background: #161b22; border: 1px solid #21262d; border-radius: 8px; padding: 10px 12px; margin-bottom: 7px; font-size: 13px; }
-.correction-row .from, .correction-row .to { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-.correction-row .arrow { color: #8b949e; }
-.correction-row .del { width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; background: transparent; border: 1px solid #30363d; border-radius: 6px; color: #f85149; font-size: 17px; cursor: pointer; flex-shrink: 0; }
-.correction-row .del:hover { background: #f85149; color: #fff; border-color: #f85149; }
-.correction-empty { color: #484f58; font-size: 13px; padding: 14px 4px; }
 .empty { text-align: center; padding: 40px 0; color: #484f58; font-size: 14px; }
 .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 20px; }
 .actions button {
@@ -160,33 +157,26 @@ body {
 }
 .search-box input:focus { border-color: #58a6ff; }
 .search-box input::placeholder { color: #484f58; }
-.insights { margin-bottom: 24px; }
-.insights h2 { color: #f0f6fc; font-size: 18px; margin-bottom: 4px; }
-.insights > p, .insight-section > p { color: #8b949e; font-size: 12px; line-height: 1.6; margin: 6px 0 12px; }
-.insight-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
-.insight-controls input[type=date], .insight-controls button { background: #161b22; color: #c9d1d9; border: 1px solid #30363d; border-radius: 6px; font-size: 13px; padding: 6px 10px; }
-.insight-controls button { cursor: pointer; }
-.insight-controls button:hover { border-color: #58a6ff; }
-.insight-controls .primary { background: #238636; border-color: #2ea043; color: #fff; }
-.insight-cards { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-bottom: 16px; }
-.insight-card { background: #161b22; border: 1px solid #21262d; border-radius: 8px; padding: 12px; text-align: center; }
-.insight-card .value { color: #58a6ff; font-size: 20px; font-weight: 700; }
-.insight-card:nth-child(2) .value, .insight-card:nth-child(4) .value { color: #7ee787; }
-.insight-card:nth-child(3) .value, .insight-card:nth-child(5) .value { color: #d2a8ff; }
-.insight-card .label { color: #8b949e; font-size: 11px; margin-top: 4px; }
-.insight-section { margin-top: 20px; }
-.chart { width: 100%; height: 240px; background: #161b22; border: 1px solid #21262d; border-radius: 8px; }
-.chart-message { align-items: center; color: #8b949e; display: flex; font-size: 13px; justify-content: center; padding: 16px; text-align: center; }
-.insight-status { color: #8b949e; font-size: 12px; min-height: 18px; margin: 8px 0; }
-.insight-status.error { color: #f85149; }
-.table-wrap { overflow-x: auto; background: #161b22; border: 1px solid #21262d; border-radius: 8px; }
-.learned-table { border-collapse: collapse; min-width: 480px; width: 100%; font-size: 13px; }
-.learned-table th, .learned-table td { border-bottom: 1px solid #21262d; padding: 10px 12px; text-align: left; }
-.learned-table th { color: #8b949e; font-size: 11px; font-weight: 500; }
-.learned-table tr:last-child td { border-bottom: 0; }
-.source-badge { background: #d2a8ff; border-radius: 10px; color: #0d1117; font-size: 10px; margin-left: 6px; padding: 2px 6px; white-space: nowrap; }
-.insight-note { background: #161b22; border-left: 3px solid #58a6ff; color: #8b949e; font-size: 12px; line-height: 1.7; margin-top: 16px; padding: 10px 12px; }
-@media (max-width: 600px) { .insight-cards { grid-template-columns: 1fr; } .table-wrap { overflow-x: auto; } }
+.section-tabs { display: flex; gap: 8px; border-bottom: 1px solid #21262d; margin-bottom: 20px; }
+.section-tabs button { color: #8b949e; background: transparent; border: 0; border-bottom: 2px solid transparent; padding: 10px 12px; cursor: pointer; font-size: 14px; }
+.section-tabs button.active { color: #f0f6fc; border-bottom-color: #58a6ff; }
+.panel { display: none; }
+.panel.active { display: block; }
+.panel h2 { color: #f0f6fc; font-size: 18px; margin-bottom: 6px; }
+.panel > p { color: #8b949e; font-size: 12px; line-height: 1.6; margin: 6px 0 14px; }
+.field-label { display: block; color: #c9d1d9; font-size: 13px; margin: 14px 0 6px; }
+.editor { width: 100%; min-height: 220px; resize: vertical; padding: 12px; background: #0d1117; color: #c9d1d9; border: 1px solid #30363d; border-radius: 6px; font: 13px/1.6 'SF Mono', Menlo, monospace; }
+.editor:focus, .correction-input:focus { outline: none; border-color: #58a6ff; }
+.section-status { color: #7ee787; font-size: 13px; min-height: 20px; margin: 10px 0; }
+.section-status.error { color: #f85149; }
+.correction-list { margin: 14px 0; }
+.correction-item { display: grid; grid-template-columns: 1fr 24px 1fr 32px; align-items: center; gap: 8px; padding: 10px; margin-bottom: 8px; background: #161b22; border: 1px solid #21262d; border-radius: 8px; }
+.correction-input { min-width: 0; width: 100%; padding: 8px 10px; background: #0d1117; color: #c9d1d9; border: 1px solid #30363d; border-radius: 6px; font-size: 13px; }
+.recent-results { max-height: 240px; overflow-y: auto; margin: 12px 0; }
+.recent-result { width: 100%; text-align: left; color: #c9d1d9; background: #161b22; border: 1px solid #21262d; border-radius: 6px; padding: 10px 12px; margin-bottom: 6px; cursor: pointer; }
+.recent-result:hover { border-color: #58a6ff; }
+.subtle { color: #8b949e; font-size: 12px; line-height: 1.6; }
+@media (max-width: 600px) { .correction-item { grid-template-columns: 1fr 20px 1fr 32px; gap: 5px; padding: 8px; } .section-tabs button { padding: 10px 6px; font-size: 12px; } }
 </style>
 </head>
 <body>
@@ -196,34 +186,25 @@ body {
     <img src="/icon.png" class="logo">
     <div>
       <h1>自定义热词</h1>
-      <p>添加后，火山引擎 ASR 会优先识别这些词汇</p>
+      <p>管理提示词模板、火山引擎热词和识别纠错规则</p>
      </div>
    </div>
-   <section class="insights">
-     <h2>词表成效</h2>
-     <p>查看词表构成、自动学习和同期使用表现。</p>
-     <div class="insight-controls">
-       <input type="date" id="insightStartDate" aria-label="开始日期">
-       <span>至</span><input type="date" id="insightEndDate" aria-label="结束日期">
-       <button onclick="quickInsights(1)">今天</button>
-       <button onclick="quickInsights(7)">7 天</button>
-       <button onclick="quickInsights(30)">30 天</button>
-       <button class="primary" onclick="fetchInsights()">刷新</button>
-      </div>
-      <div class="insight-cards" id="insightCards"></div>
-      <p class="insight-status" id="insightStatus" aria-live="polite"></p>
-     <div class="insight-section">
-       <p>每日自动学习新增</p><div class="chart" id="learningChart"></div>
-     </div>
-     <div class="insight-section">
-       <p>自动学习词排名</p>
-       <div class="table-wrap"><table class="learned-table"><thead><tr><th>词汇</th><th>频次</th><th>首次加入</th><th>权重</th></tr></thead><tbody id="topLearned"></tbody></table></div>
-     </div>
-     <div class="insight-section">
-       <p>同期使用表现</p><div class="insight-cards" id="usageCards"></div><div class="chart" id="usageChart"></div>
-     </div>
-     <div class="insight-note">自动学习基于最终转写，仅适用于火山引擎 ASR。同期使用表现仅提供使用上下文，不代表热词单独带来的提升。</div>
+   <nav class="section-tabs" aria-label="热词管理">
+     <button class="active" type="button" data-panel="panel-prompt">提示词管理</button>
+     <button type="button" data-panel="panel-hotwords">热词管理</button>
+     <button type="button" data-panel="panel-corrections">识别纠错</button>
+   </nav>
+   <section class="panel active" id="panel-prompt">
+     <h2>提示词管理</h2>
+     <p>查看和编辑本机保存的提示词模板。模板用于 ASR 最终文本的 DeepSeek 上下文纠错；火山引擎 ASR 本身使用热词表，不读取通用 Prompt。可使用 {{known_terms}} 和 {{recognized_text}} 占位符。</p>
+     <label class="field-label" for="promptTemplate">提示词模板</label>
+     <textarea class="editor" id="promptTemplate" spellcheck="false" aria-label="提示词模板"></textarea>
+     <div class="actions"><button class="btn-save" type="button" onclick="savePrompt()">💾 保存模板</button></div>
+     <div id="promptStatus" class="section-status" aria-live="polite"></div>
    </section>
+   <section class="panel" id="panel-hotwords">
+     <h2>热词管理</h2>
+     <p>添加后，火山引擎 ASR 会优先识别这些词汇。</p>
    <div class="search-box">
     <input type="text" id="search" placeholder="搜索热词…" oninput="render()">
   </div>
@@ -232,126 +213,89 @@ body {
     <button class="btn-save" onclick="save()">💾 保存</button>
   </div>
   <div id="list"></div>
-  <section class="corrections">
-    <h2>识别纠错</h2>
-    <p>最终识别文本提交前应用，适用于所有 ASR 服务。填写实际误识写法和标准术语；英文按完整单词匹配。与热词分开生效。</p>
-    <div class="correction-entry">
-      <input id="correctionFrom" type="text" placeholder="识别成，例如实际误识写法" aria-label="识别成">
-      <input id="correctionTo" type="text" placeholder="改为，例如 Aster" aria-label="改为">
-      <button type="button" onclick="addCorrection()">添加纠错</button>
-    </div>
-    <div id="correctionList"></div>
-  </section>
   <div id="status"></div>
   <div class="tip">
     <b>权重</b>（1–10）：数值越高，ASR 越倾向选择该词。<br>
     修改后点击「保存」或按 ⌘S 生效，下次录音即应用。
   </div>
+   </section>
+   <section class="panel" id="panel-corrections">
+     <h2>识别纠错</h2>
+     <p>从最近的最终识别文本中选择原文，编辑“识别为”中的错误片段，再填写正确文本。保存后会自动修正后续识别结果。</p>
+     <div class="actions"><button class="btn-save" type="button" onclick="loadRecentResults()">↻ 刷新识别记录</button><button class="btn-add" type="button" onclick="addCorrection()">+ 添加纠错规则</button><button class="btn-save" type="button" onclick="saveCorrections()">💾 保存纠错</button></div>
+     <div class="subtle">最近识别结果（点击一条可带入“识别为”）：</div>
+     <div id="recentResults" class="recent-results"><div class="empty">正在读取最近记录…</div></div>
+     <div class="correction-list" id="correctionList"></div>
+     <div id="correctionStatus" class="section-status" aria-live="polite"></div>
+   </section>
 </div>
 <script>
-let data = { hotwords: {}, corrections: {} };
+let data = { hotwords: {} };
 let dirty = false;
-let insights = { topLearned: [] };
-let learningChart = null;
-let usageChart = null;
-function setInsightStatus(message, isError) {
-  const status = document.getElementById('insightStatus');
-  status.textContent = message || '';
-  status.className = 'insight-status' + (isError ? ' error' : '');
+let correctionData = { corrections: {} };
+let promptDirty = false;
+let correctionsDirty = false;
+function setSectionStatus(id, message, isError) {
+  const status = document.getElementById(id); status.textContent = message || '';
+  status.className = 'section-status' + (isError ? ' error' : '');
 }
-function setChartMessage(id, message) {
-  const chart = document.getElementById(id);
-  chart.replaceChildren();
-  const text = document.createElement('div');
-  text.className = 'chart-message';
-  text.textContent = message;
-  chart.appendChild(text);
+document.querySelectorAll('.section-tabs button').forEach(button => button.addEventListener('click', () => {
+  document.querySelectorAll('.section-tabs button').forEach(item => item.classList.toggle('active', item === button));
+  document.querySelectorAll('.panel').forEach(panel => panel.classList.toggle('active', panel.id === button.dataset.panel));
+}));
+document.getElementById('promptTemplate').addEventListener('input', () => { promptDirty = true; });
+document.getElementById('correctionList').addEventListener('input', () => { correctionsDirty = true; });
+function loadPrompt() {
+  fetch('/vocab/api/prompt').then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(result => { document.getElementById('promptTemplate').value = result.template || ''; promptDirty = false; })
+    .catch(err => setSectionStatus('promptStatus', '模板加载失败：' + err, true));
 }
-function initInsightCharts() {
-  if (!window.echarts) {
-    setChartMessage('learningChart', '图表不可用：ECharts 未加载，仍可查看和编辑词表。');
-    setChartMessage('usageChart', '图表不可用：ECharts 未加载，仍可查看和编辑词表。');
-    return;
-  }
-  try {
-    learningChart = window.echarts.init(document.getElementById('learningChart'), 'dark');
-    usageChart = window.echarts.init(document.getElementById('usageChart'), 'dark');
-  } catch (error) {
-    learningChart = null;
-    usageChart = null;
-    setChartMessage('learningChart', '图表不可用：ECharts 初始化失败，仍可查看和编辑词表。');
-    setChartMessage('usageChart', '图表不可用：ECharts 初始化失败，仍可查看和编辑词表。');
-  }
+function savePrompt() {
+  fetch('/vocab/api/prompt', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ template: document.getElementById('promptTemplate').value }) })
+    .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); promptDirty = false; setSectionStatus('promptStatus', '✅ 模板已保存到本机'); })
+    .catch(err => setSectionStatus('promptStatus', '❌ 保存失败：' + err, true));
 }
-function localDateStr(date) {
-  return date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0');
+function renderCorrections() {
+  const list = document.getElementById('correctionList'); list.replaceChildren();
+  Object.entries(correctionData.corrections).forEach(([source, target]) => addCorrectionRow(source, target));
 }
-function todayStr() { return localDateStr(new Date()); }
-function initInsightDates() {
-  const end = todayStr();
-  const start = new Date(); start.setDate(start.getDate() - 29);
-  document.getElementById('insightStartDate').value = localDateStr(start);
-  document.getElementById('insightEndDate').value = end;
+function addCorrectionRow(source = '', target = '') {
+  const row = document.createElement('div'); row.className = 'correction-item';
+  const wrong = document.createElement('input'); wrong.className = 'correction-input'; wrong.value = source; wrong.placeholder = '识别为'; wrong.setAttribute('aria-label', '识别为');
+  const arrow = document.createElement('span'); arrow.textContent = '→'; arrow.className = 'subtle';
+  const right = document.createElement('input'); right.className = 'correction-input'; right.value = target; right.placeholder = '正确文本'; right.setAttribute('aria-label', '正确文本');
+  const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'del'; remove.textContent = '×'; remove.setAttribute('aria-label', '删除纠错规则');
+  remove.addEventListener('click', () => { row.remove(); correctionsDirty = true; }); row.append(wrong, arrow, right, remove); document.getElementById('correctionList').appendChild(row);
+  return wrong;
 }
-function quickInsights(days) {
-  const end = todayStr(); const start = new Date(); start.setDate(start.getDate() - days + 1);
-  document.getElementById('insightStartDate').value = localDateStr(start);
-  document.getElementById('insightEndDate').value = end; fetchInsights();
+function addCorrection() { addCorrectionRow().focus(); correctionsDirty = true; }
+function loadCorrections() {
+  fetch('/vocab/api/corrections').then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(result => { correctionData.corrections = result.corrections || {}; correctionsDirty = false; renderCorrections(); })
+    .catch(err => setSectionStatus('correctionStatus', '纠错规则加载失败：' + err, true));
 }
-function fetchInsights() {
-  const start = document.getElementById('insightStartDate').value;
-  const end = document.getElementById('insightEndDate').value;
-  setInsightStatus('成效数据加载中…');
-  fetch('/vocab/api/insights?start=' + start + '&end=' + end).then(r => {
-    if (!r.ok) throw new Error('HTTP ' + r.status); return r.json();
-  }).then(result => {
-    insights = result; renderInsightCards(result.summary); renderLearningChart(result.learningDaily);
-    renderTopLearned(result.topLearned); renderUsage(result.usage); render();
-    const isEmpty = !result.summary.totalCount && !result.topLearned.length && !result.usage.voiceInputCount;
-    setInsightStatus(isEmpty ? '暂无成效数据' : '');
-  }).catch(err => setInsightStatus('成效加载失败: ' + err + '。请重试。', true));
-}
-function renderCards(id, cards) {
-  const container = document.getElementById(id);
-  container.replaceChildren();
-  cards.forEach(card => {
-    const element = document.createElement('div'); element.className = 'insight-card';
-    const value = document.createElement('div'); value.className = 'value'; value.textContent = card[1];
-    const label = document.createElement('div'); label.className = 'label'; label.textContent = card[0];
-    element.append(value, label); container.appendChild(element);
+function saveCorrections() {
+  const corrections = {};
+  document.querySelectorAll('.correction-item').forEach(row => {
+    const inputs = row.querySelectorAll('input'); const source = inputs[0].value.trim(); const target = inputs[1].value.trim();
+    if (source && target) corrections[source] = target;
   });
+  fetch('/vocab/api/corrections', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ corrections }) })
+    .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); correctionData.corrections = corrections; correctionsDirty = false; renderCorrections(); setSectionStatus('correctionStatus', '✅ 纠错规则已保存，后续识别会自动应用'); })
+    .catch(err => setSectionStatus('correctionStatus', '❌ 保存失败：' + err, true));
 }
-function renderInsightCards(summary) {
-  const cards = [['当前词汇', summary.totalCount], ['自动学习', summary.autoLearnedCount], ['手动添加', summary.manualCount], ['自动占比', summary.autoLearnedShare == null ? '--' : summary.autoLearnedShare + '%'], ['容量', summary.capacity]];
-  renderCards('insightCards', cards);
-}
-function chartOption(daily, series, colors) {
-  return { tooltip: { trigger: 'axis' }, legend: { data: series.map(s => s.name), textStyle: { color: '#8b949e' } }, grid: { left: 45, right: 20, top: 35, bottom: 30 }, xAxis: { type: 'category', data: daily.map(row => row.date.slice(5)), axisLabel: { color: '#8b949e' }, axisLine: { lineStyle: { color: '#21262d' } } }, yAxis: { type: 'value', minInterval: 1, axisLabel: { color: '#8b949e' }, splitLine: { lineStyle: { color: '#21262d' } } }, series: series.map((s, i) => ({ name: s.name, type: s.type || 'line', data: daily.map(s.value), itemStyle: { color: colors[i] } })) };
-}
-function renderLearningChart(daily) { if (learningChart) { learningChart.setOption(chartOption(daily, [{ name: '新增词汇', type: 'bar', value: row => row.addedCount }], ['#7ee787']), true); learningChart.resize(); } }
-function renderTopLearned(rows) {
-  const body = document.getElementById('topLearned'); body.replaceChildren();
-  if (!rows.length) {
-    const row = document.createElement("tr"); const cell = document.createElement('td');
-    cell.colSpan = 4; cell.className = 'empty'; cell.textContent = '暂无自动学习词汇'; row.appendChild(cell); body.appendChild(row); return;
-  }
-  rows.forEach(item => {
-    const row = document.createElement("tr");
-    [item.word, item.frequency, item.addedAt || '--', item.weight].forEach(value => {
-      const cell = document.createElement('td'); cell.textContent = value; row.appendChild(cell);
-    });
-    body.appendChild(row);
-  });
-}
-function renderUsage(usage) {
-  const cards = [['语音开始', usage.voiceInputCount], ['最终提交', usage.committedCount], ['自动提交', usage.autoSubmitCount], ['提交率', usage.commitRate == null ? '--' : usage.commitRate + '%'], ['自动提交率', usage.autoSubmitRate == null ? '--' : usage.autoSubmitRate + '%']];
-  renderCards('usageCards', cards);
-  if (usageChart) { usageChart.setOption(chartOption(usage.daily, [{ name: '最终提交', value: row => row.committedCount }, { name: '自动提交', value: row => row.autoSubmitCount }], ['#58a6ff', '#d2a8ff']), true); usageChart.resize(); }
+function loadRecentResults() {
+  fetch('/vocab/api/recent-results').then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(result => {
+      const list = document.getElementById('recentResults'); list.replaceChildren();
+      if (!result.results.length) { list.innerHTML = '<div class="empty">暂无最终识别记录</div>'; return; }
+      result.results.forEach(text => { const button = document.createElement('button'); button.type = 'button'; button.className = 'recent-result'; button.textContent = text; button.addEventListener('click', () => { const source = addCorrectionRow(text); source.parentElement.querySelectorAll('input')[1].focus(); correctionsDirty = true; }); list.appendChild(button); });
+    }).catch(err => { const list = document.getElementById('recentResults'); list.textContent = '识别记录读取失败：' + err; });
 }
 function load() {
   fetch('/vocab/api/hotwords')
     .then(r => r.json())
-    .then(d => { data = d; data.hotwords = data.hotwords || {}; data.corrections = data.corrections || {}; render(); renderCorrections(); })
+    .then(d => { data = d; render(); })
     .catch(err => showStatus('加载失败: ' + err, true));
 }
 function render() {
@@ -364,7 +308,6 @@ function render() {
     empty.textContent = entries.length === 0 ? '还没有热词，点击上方添加' : '无匹配结果'; list.appendChild(empty);
     return;
   }
-  const learnedWords = new Set(insights.topLearned.map(row => row.word));
   filtered.forEach(([word, weight]) => {
     const row = document.createElement('div'); row.className = 'row';
     const wordCell = document.createElement('div'); wordCell.className = 'word';
@@ -372,7 +315,6 @@ function render() {
     wordInput.dataset.word = word;
     wordInput.addEventListener("input", () => update(wordInput, getWeight(wordInput)));
     wordInput.addEventListener('keydown', onKey); wordCell.appendChild(wordInput);
-    if (learnedWords.has(word)) { const badge = document.createElement('span'); badge.className = 'source-badge'; badge.textContent = '自动学习'; wordCell.appendChild(badge); }
     const label = document.createElement('span'); label.className = 'wlabel'; label.textContent = '权重';
     const weightCell = document.createElement('div'); weightCell.className = 'weight';
     const weightInput = document.createElement('input'); weightInput.type = 'number'; weightInput.min = 1; weightInput.max = 10; weightInput.value = weight;
@@ -380,30 +322,6 @@ function render() {
     const deleteButton = document.createElement('button'); deleteButton.className = 'del'; deleteButton.type = 'button'; deleteButton.textContent = '✕';
     deleteButton.addEventListener("click", () => remove(wordInput.dataset.word)); row.append(wordCell, label, weightCell, deleteButton); list.appendChild(row);
   });
-}
-function renderCorrections() {
-  const list = document.getElementById('correctionList'); list.replaceChildren();
-  const entries = Object.entries(data.corrections || {}).sort((a, b) => a[0].localeCompare(b[0]));
-  if (!entries.length) {
-    const empty = document.createElement('div'); empty.className = 'correction-empty'; empty.textContent = '暂无纠正规则'; list.appendChild(empty); return;
-  }
-  entries.forEach(([from, to]) => {
-    const row = document.createElement('div'); row.className = 'correction-row';
-    const source = document.createElement('span'); source.className = 'from'; source.textContent = from;
-    const arrow = document.createElement('span'); arrow.className = 'arrow'; arrow.textContent = '→';
-    const target = document.createElement('span'); target.className = 'to'; target.textContent = to;
-    const button = document.createElement('button'); button.type = 'button'; button.className = 'del'; button.textContent = '✕'; button.setAttribute('aria-label', '删除纠正规则');
-    button.addEventListener('click', () => { delete data.corrections[from]; dirty = true; renderCorrections(); });
-    row.append(source, arrow, target, button); list.appendChild(row);
-  });
-}
-function addCorrection() {
-  const fromInput = document.getElementById('correctionFrom');
-  const toInput = document.getElementById('correctionTo');
-  const from = fromInput.value.trim(); const to = toInput.value.trim();
-  if (!from || !to) { showStatus('请填写误识写法和标准术语', true); return; }
-  data.corrections = data.corrections || {}; data.corrections[from] = to; dirty = true;
-  fromInput.value = ''; toInput.value = ''; renderCorrections(); fromInput.focus();
 }
 function getWeight(input) {
   const row = input.closest('.row');
@@ -452,11 +370,15 @@ function onKey(e) {
   }
 }
 document.addEventListener('keydown', e => {
-  if ((e.metaKey || e.ctrlKey) && e.key === 's') { e.preventDefault(); save(); }
+  if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+    e.preventDefault();
+    if (e.target.closest('#panel-prompt')) savePrompt();
+    else if (e.target.closest('#panel-corrections')) saveCorrections();
+    else save();
+  }
 });
-window.addEventListener('beforeunload', e => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
-window.addEventListener('resize', () => { if (learningChart) learningChart.resize(); if (usageChart) usageChart.resize(); });
-initInsightDates(); initInsightCharts(); load(); fetchInsights();
+window.addEventListener('beforeunload', e => { if (dirty || promptDirty || correctionsDirty) { e.preventDefault(); e.returnValue = ''; } });
+load(); loadPrompt(); loadCorrections(); loadRecentResults();
 </script>
 </body>
 </html>"""
@@ -850,6 +772,8 @@ class WebHandler(http.server.BaseHTTPRequestHandler):
     stats_data_path: str = ""
     vocab_data_path: str = ""
     vocab_state_data_path: str = ""
+    prompt_template_path: str = ""
+    transcription_log_path: str = "/private/tmp/codex-voice-hotkey.log"
     icon_path: str = ""
 
     def do_GET(self):
@@ -867,6 +791,12 @@ class WebHandler(http.server.BaseHTTPRequestHandler):
                 self._send_vocab_data()
             elif path == "/vocab/api/insights":
                 self._send_vocab_insights(params)
+            elif path == "/vocab/api/prompt":
+                self._send_prompt_template()
+            elif path == "/vocab/api/corrections":
+                self._send_corrections()
+            elif path == "/vocab/api/recent-results":
+                self._send_recent_results()
             else:
                 self._send_html(VOCAB_HTML)
         elif path == "/stats" or path.startswith("/stats/"):
@@ -885,6 +815,10 @@ class WebHandler(http.server.BaseHTTPRequestHandler):
         path = parsed.path.rstrip("/")
         if path == "/vocab/api/hotwords":
             self._save_vocab_data()
+        elif path == "/vocab/api/prompt":
+            self._save_prompt_template()
+        elif path == "/vocab/api/corrections":
+            self._save_corrections()
         else:
             self.send_response(404)
             self.end_headers()
@@ -920,6 +854,90 @@ class WebHandler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _send_prompt_template(self):
+        try:
+            template = Path(self.prompt_template_path).read_text(encoding="utf-8")
+        except (FileNotFoundError, OSError, UnicodeDecodeError):
+            template = DEFAULT_PROMPT_TEMPLATE
+        self._send_json({"template": template})
+
+    def _save_prompt_template(self):
+        payload = self._read_json_body()
+        template = payload.get("template")
+        if not isinstance(template, str):
+            self.send_error(400, "template must be a string")
+            return
+        self._write_text(self.prompt_template_path, template)
+        self._send_json({"ok": True})
+
+    def _send_corrections(self):
+        corrections = self._load_vocab().get("corrections", {})
+        if not isinstance(corrections, dict):
+            corrections = {}
+        self._send_json({"corrections": corrections})
+
+    def _save_corrections(self):
+        payload = self._read_json_body()
+        corrections = payload.get("corrections", {})
+        if not isinstance(corrections, dict) or any(
+            not isinstance(source, str) or not isinstance(target, str)
+            for source, target in corrections.items()
+        ):
+            self.send_error(400, "corrections must be a string map")
+            return
+        cleaned = {
+            source.strip(): target.strip()
+            for source, target in corrections.items()
+            if source.strip() and target.strip()
+        }
+        vocabulary = self._load_vocab()
+        vocabulary["corrections"] = cleaned
+        self._write_json(self.vocab_data_path, vocabulary)
+        self._send_json({"ok": True})
+
+    def _send_recent_results(self):
+        import re
+        pattern = re.compile(r"收到最终转写：(.*)$")
+        try:
+            lines = Path(self.transcription_log_path).read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            lines = []
+        results = []
+        for line in reversed(lines):
+            match = pattern.search(line)
+            if match and match.group(1).strip() and match.group(1).strip() not in results:
+                results.append(match.group(1).strip())
+                if len(results) >= 30:
+                    break
+        self._send_json({"results": results})
+
+    def _read_json_body(self) -> dict:
+        length = int(self.headers.get("Content-Length", "0"))
+        try:
+            payload = json.loads(self.rfile.read(length))
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            payload = {}
+        return payload if isinstance(payload, dict) else {}
+
+    def _write_json(self, data_path: str, value: dict):
+        self._write_text(data_path, json.dumps(value, ensure_ascii=False, indent=2))
+
+    def _write_text(self, data_path: str, text: str):
+        path = Path(data_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_suffix(path.suffix + ".tmp")
+        temporary.write_text(text, encoding="utf-8")
+        temporary.replace(path)
+
+    def _send_json(self, value: dict):
+        body = json.dumps(value, ensure_ascii=False).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def _send_vocab_insights(self, params: dict):
         date_range = parse_date_range(params.get("start", [None])[0], params.get("end", [None])[0])
         if date_range is None:
@@ -939,15 +957,20 @@ class WebHandler(http.server.BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _save_vocab_data(self):
-        length = int(self.headers.get("Content-Length", "0"))
-        body = self.rfile.read(length)
-        new_vocab = json.loads(body)
-        with open(self.vocab_data_path, "w", encoding="utf-8") as f:
-            json.dump(new_vocab, f, ensure_ascii=False, indent=2)
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.end_headers()
-        self.wfile.write(b'{"ok":true}')
+        new_vocab = self._read_json_body()
+        hotwords = new_vocab.get("hotwords")
+        if not isinstance(hotwords, dict) or any(
+            not isinstance(word, str) or not isinstance(weight, int) or isinstance(weight, bool)
+            for word, weight in hotwords.items()
+        ):
+            self.send_error(400, "hotwords must be a string-to-integer map")
+            return
+        current = self._load_vocab()
+        corrections = new_vocab.get("corrections", current.get("corrections", {}))
+        if not isinstance(corrections, dict):
+            corrections = {}
+        self._write_json(self.vocab_data_path, {"hotwords": hotwords, "corrections": corrections})
+        self._send_json({"ok": True})
 
     def _load_vocab(self) -> dict:
         path = Path(self.vocab_data_path)
@@ -1028,6 +1051,8 @@ def main():
     parser.add_argument("--stats-data", type=str, default="", help="usage-events.jsonl 路径")
     parser.add_argument("--vocab-data", type=str, default="", help="vocabulary.json 路径")
     parser.add_argument("--vocab-state-data", type=str, default="", help="vocab-learner-state.json 路径")
+    parser.add_argument("--prompt-template-data", type=str, default="", help="提示词模板保存路径")
+    parser.add_argument("--transcription-log", type=str, default="", help="最终识别文本日志路径")
     parser.add_argument("--icon", type=str, default="", help="cliMC.png 路径")
     args = parser.parse_args()
 
@@ -1035,6 +1060,8 @@ def main():
     stats_data_path = args.stats_data
     vocab_data_path = args.vocab_data
     vocab_state_data_path = args.vocab_state_data
+    prompt_template_path = args.prompt_template_data
+    transcription_log_path = args.transcription_log or "/private/tmp/codex-voice-hotkey.log"
     icon_path = args.icon
 
     if not icon_path:
@@ -1049,10 +1076,14 @@ def main():
         vocab_data_path = str(Path.home() / ".config/codex-voice/vocabulary.json")
     if not vocab_state_data_path:
         vocab_state_data_path = str(Path.home() / ".config/codex-voice/vocab-learner-state.json")
+    if not prompt_template_path:
+        prompt_template_path = str(Path.home() / ".config/codex-voice/prompt-template.txt")
 
     WebHandler.stats_data_path = stats_data_path
     WebHandler.vocab_data_path = vocab_data_path
     WebHandler.vocab_state_data_path = vocab_state_data_path
+    WebHandler.prompt_template_path = prompt_template_path
+    WebHandler.transcription_log_path = transcription_log_path
     WebHandler.icon_path = icon_path
 
     server = http.server.ThreadingHTTPServer(("127.0.0.1", port), WebHandler)
